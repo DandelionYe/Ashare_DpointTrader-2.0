@@ -11,29 +11,65 @@ A quantitative trading backtesting framework based on machine learning to predic
 
 ## Table of Contents
 
+- [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
-- [Quick Start](#-quick-start)
 - [Usage](#-usage)
 - [Configuration](#-configuration)
+- [Realistic Execution](#-realistic-execution)
 - [Output Files](#-output-files)
 - [Project Structure](#-project-structure)
 - [Core Algorithms](#-core-algorithms)
+- [Testing](#-testing)
+- [Engineering Features](#-engineering-features)
 - [FAQ](#-faq)
 - [Disclaimer](#-disclaimer)
 
 ---
 
-## Features
+## 🚀 Quick Start
+
+### 5-Minute Setup
+
+```bash
+# 1. Clone project
+git clone <your-repo-url>
+cd "Ashare_DpointTrader 2.0"
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Verify installation
+python main_cli.py --help
+
+# 4. Run example (using built-in sample data)
+python main_cli.py
+
+# 5. View results (in output/ directory)
+# - run_001.xlsx          # Backtest report
+# - run_001_config.json   # Best configuration
+# - run_001_metadata.json # Full metadata (for reproduction)
+```
+
+### Opening Excel Report
+
+1. **First check** `WalkForwardSummary` sheet (Out-of-sample metrics - PRIMARY KPIs)
+2. **Then check** `Trades` sheet (Trade records)
+3. `EquityCurve` sheet is for reference only (In-sample results)
+
+---
+
+## ✨ Features
 
 ### Core Capabilities
 
-- **Dpoint Prediction Model**: Predicts the probability of next-day closing price increase `P(close_{t+1} > close_t | X_t)`
-- **Walk-forward Validation**: Time-series cross-validation to avoid look-ahead bias and ensure out-of-sample evaluation
-- **Random Search Optimization**: Automatic search for optimal feature combinations, model parameters, and trading strategy parameters
+- **Dpoint Prediction Model**: Predicts probability of next-day close price increase `P(close_{t+1} > close_t | X_t)`
+- **Walk-forward Validation**: Time-series cross-validation to avoid look-ahead bias, ensures out-of-sample evaluation
+- **Random Search Optimization**: Auto-search for optimal feature combinations, model parameters, and trading strategy parameters
 - **Multi-Model Support**: Logistic Regression, SGDClassifier, XGBoost (with GPU acceleration)
 - **A-Share Trading Constraints**: Supports T+1, minimum 100-share units, long-only, and other A-share rules
+- **Realistic Execution Model**: Transaction costs (commission, stamp tax, transfer fee), slippage, multiple execution price models
 
 ### Technical Features
 
@@ -42,10 +78,12 @@ A quantitative trading backtesting framework based on machine learning to predic
 - **Parallel Search**: Utilizes multi-core CPU for parallel candidate evaluation
 - **CUDA Acceleration**: Auto-detects and enables XGBoost GPU acceleration
 - **Continuous Learning**: Supports `continue` mode to optimize based on historical best configurations
+- **Structured Logging**: JSON format logs with performance tracking
+- **Full Metadata Recording**: Records code version, dependency versions, git commit for exact reproduction
 
 ---
 
-## Requirements
+## 💻 Requirements
 
 ### System Requirements
 
@@ -55,18 +93,24 @@ A quantitative trading backtesting framework based on machine learning to predic
 
 ### Python Dependencies
 
+**Required:**
 ```
 pandas>=1.3.0
 numpy>=1.20.0
 scikit-learn>=0.24.0
 openpyxl>=3.0.0        # Excel read/write
-xgboost>=1.5.0         # Optional, for XGBoost model
+xlsxwriter>=3.0.0      # Excel output (required)
 joblib>=1.1.0          # Parallel computing
+```
+
+**Optional:**
+```
+xgboost>=1.5.0         # XGBoost model (GPU acceleration)
 ```
 
 ---
 
-## Installation
+## 📥 Installation
 
 ### 1. Clone or Download Project
 
@@ -89,25 +133,37 @@ source venv/bin/activate
 
 ### 3. Install Dependencies
 
+**Option A: Using requirements.txt (Recommended)**
 ```bash
-pip install pandas numpy scikit-learn openpyxl joblib
+pip install -r requirements.txt
+```
+
+**Option B: Using pyproject.toml**
+```bash
+pip install .
+```
+
+**Option C: Manual Installation**
+```bash
+pip install pandas numpy scikit-learn openpyxl xlsxwriter joblib
 
 # Optional: Install XGBoost (for GPU acceleration)
 pip install xgboost
-
-# For GPU acceleration, install CUDA version of XGBoost
-pip install xgboost-cu112  # Select according to your CUDA version
 ```
 
 ### 4. Verify Installation
 
 ```bash
-python -c "import pandas, sklearn, xgboost; print('OK')"
+# Quick verification (check dependencies and data file)
+python main_cli.py --help
+
+# Or run startup checks (without backtest)
+python setup_check.py
 ```
 
 ---
 
-## Quick Start
+## 🎯 Usage
 
 ### Run with Default Sample Data
 
@@ -131,11 +187,13 @@ python main_cli.py --mode continue --runs 500
 
 # Use your own data file
 python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
+
+# Realistic execution mode - Use open price + costs + slippage (recommended)
+python main_cli.py --mode first --runs 100 --exec_price_model next_open --slippage_bps 10
+
+# Reproduce previous run
+python main_cli.py --config output/run_001_metadata.json
 ```
-
----
-
-## Usage
 
 ### Command Line Arguments
 
@@ -147,6 +205,13 @@ python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
 | `--runs` | Integer | `100` | Random search iterations (recommended: 100/500/1000/5000) |
 | `--seed` | Integer | `42` | Random seed for reproducibility |
 | `--initial_cash` | Float | `100000` | Initial capital (CNY) |
+| `--exec_price_model` | String | `next_open` | Execution price model: `same_close_idealized`, `next_open`, `next_close` |
+| `--slippage_bps` | Float | `10.0` | Slippage in basis points, default 10 bps (0.1%) |
+| `--commission_rate` | Float | `0.00025` | Commission rate, default 0.025% |
+| `--commission_min` | Float | `5.0` | Minimum commission, default 5 CNY |
+| `--config` | String | `None` | Load configuration from file (for reproduction) |
+| `--record_metadata` | Boolean | `True` | Record full metadata (default: enabled) |
+| `--log_dir` | String | `./logs` | Structured logging directory |
 
 ### Run Modes
 
@@ -178,7 +243,7 @@ Excel file must contain the following columns:
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 ### Feature Configuration (Auto-Search)
 
@@ -215,20 +280,107 @@ Excel file must contain the following columns:
 
 ---
 
-## Output Files
+## 🔬 Realistic Execution
+
+Version 2.0 introduces a **realistic execution model** that accounts for:
+- **Execution price models**: `same_close_idealized`, `next_open`, `next_close`
+- **Transaction costs**: Commission, transfer fee, stamp tax
+- **Slippage**: Fixed basis points (bps) slippage model
+
+### Execution Price Models
+
+| Model | Signal Day | Execution Day | Price Used | Note |
+|-------|------------|---------------|------------|------|
+| `same_close_idealized` | t | t+1 | Day t close | Idealized (legacy), underestimates overnight gap |
+| `next_open` | t | t+1 | Day t+1 open | **Recommended**, more realistic, captures overnight risk |
+| `next_close` | t | t+1 | Day t+1 close | Conservative estimate |
+
+### Transaction Costs (A-Share Standard)
+
+| Fee Type | Rate | Direction | Minimum |
+|----------|------|-----------|---------|
+| **Commission** | 0.025% (2.5‱) | Buy & Sell | 5 CNY |
+| **Transfer Fee** | 0.001% (0.1‱) | Buy & Sell | - |
+| **Stamp Tax** | 0.05% (5‱) | Sell only | - |
+
+**Calculation Example:**
+
+Buy 100 shares @ 10 CNY:
+- Turnover: 100 × 10 = 1,000 CNY
+- Commission: max(1,000 × 0.025%, 5) = 5 CNY
+- Transfer fee: 1,000 × 0.001% = 0.01 CNY
+- **Total cost**: 5.01 CNY
+
+Sell 100 shares @ 10 CNY:
+- Turnover: 100 × 10 = 1,000 CNY
+- Commission: max(1,000 × 0.025%, 5) = 5 CNY
+- Transfer fee: 1,000 × 0.001% = 0.01 CNY
+- Stamp tax: 1,000 × 0.05% = 0.5 CNY
+- **Total cost**: 5.51 CNY
+
+### Slippage Model
+
+Slippage is applied as a fixed basis points (bps) adjustment:
+
+- **Buy**: Execution price = Base price × (1 + slippage_bps / 10000)
+- **Sell**: Execution price = Base price × (1 - slippage_bps / 10000)
+
+**Default**: 10 bps (0.1%)
+
+**Example**:
+- Base price: 10.00 CNY
+- Slippage: 10 bps
+- Buy execution: 10.00 × 1.001 = **10.01 CNY**
+- Sell execution: 10.00 × 0.999 = **9.99 CNY**
+
+### Expected Impact
+
+When switching from `same_close_idealized` to `next_open + fee + slippage`:
+
+| Component | Typical Impact |
+|-----------|----------------|
+| Overnight gap (close→open) | -0.5% ~ -2% per trade |
+| Slippage (10 bps) | -0.1% per trade |
+| Transaction costs | -0.5% ~ -1% per round trip |
+| **Total** | **-1% ~ -3% per trade** |
+
+**High-frequency strategies** (many trades per year) will see a larger cumulative impact.
+
+---
+
+## 📊 Output Files
 
 After running, the `output/` directory will generate the following files:
 
 ### run_XXX.xlsx - Backtest Report
 
-| Sheet Name | Content |
-|------------|---------|
-| `EquityCurve` | Equity curve (date, equity, position, etc.) |
-| `Trades` | Trade records (buy/sell dates, prices, returns, etc.) |
-| `SearchLog` | Walk-forward validation log (out-of-sample metrics per fold) |
-| `Config` | Configuration parameters |
-| `Log` | Run logs and diagnostic information |
-| `ModelParams` | Model parameters (feature coefficients, scaler parameters) |
+**Important: Sheets are listed in order of importance. Check [WalkForwardSummary] first.**
+
+| Sheet Name | Content | Priority |
+|------------|---------|----------|
+| `WalkForwardSummary` | **Walk-Forward Out-of-Sample Validation Metrics** (Key KPIs) | ⭐⭐⭐⭐⭐ |
+| `Trades` | Trade records (buy/sell dates, prices, returns, costs, slippage, etc.) | ⭐⭐⭐⭐ |
+| `EquityCurve` | Equity curve (date, equity, position, drawdown, signals, etc.) | ⭐⭐⭐ |
+| `FinalFit_InSample` | **In-Sample Result Warning** (For reference only, not out-of-sample performance) | ⚠️ |
+| `SearchLog` | Complete random search iteration log (detailed metrics per fold, config params) | ⭐⭐⭐⭐ |
+| `Config` | Configuration parameters (features, model, trading params, constraints) | ⭐⭐⭐ |
+| `ModelParams` | Model parameters (feature coefficients, scaler params, intercept) | ⭐⭐ |
+| `Log` | Run logs and diagnostic information | ⭐⭐ |
+
+### Why is [WalkForwardSummary] Most Important?
+
+- **Out-of-Sample Validation**: Each Walk-Forward fold uses unseen data, reflecting real expected performance
+- **No Information Leakage**: Training and validation sets are strictly separated, avoiding look-ahead bias
+- **Robustness Assessment**: Multi-fold validation evaluates strategy stability across different market conditions
+
+### ⚠️ Why is [EquityCurve] For Reference Only?
+
+`EquityCurve` shows the **Full-Sample Fit Result** (In-Sample):
+- Model is trained and predicted on the same data (information leakage)
+- Does not account for overnight gaps, slippage, and fill deviation (unless using realistic execution)
+- Results are overly optimistic and **do not represent future live trading performance**
+
+**For real out-of-sample performance, check the metrics in [WalkForwardSummary] and [SearchLog] sheets.**
 
 ### run_XXX_config.json - Configuration File
 
@@ -236,6 +388,18 @@ Contains all parameters of the best configuration, used for:
 - Reproducing run results
 - `continue` mode loading
 - Strategy parameter archiving
+
+### run_XXX_metadata.json - Full Metadata (NEW)
+
+Contains complete run metadata:
+- Code version (git commit)
+- Python version
+- All dependency versions
+- Data file hash
+- Random seed
+- Hostname and timestamp
+
+Used for **exact reproduction**.
 
 ### Key Metrics Explanation
 
@@ -251,7 +415,7 @@ Contains all parameters of the best configuration, used for:
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 Ashare_DpointTrader 2.0/
@@ -267,31 +431,52 @@ Ashare_DpointTrader 2.0/
 ├── reporter.py              # Report generation
 ├── persistence.py           # Configuration persistence
 ├── constants.py             # Global constants
+├── config_schema.py         # Configuration schema and validation (engineering)
+├── structured_logging.py    # Structured logging configuration (engineering)
+├── setup_check.py           # Startup verification script
+├── requirements.txt         # Python dependencies
+├── pyproject.toml           # Project configuration file
+├── pytest.ini               # pytest test configuration
 ├── data/                    # Data directory
 │   └── 600698_5Y_daily_qfq_20210302_20260302.xlsx
-└── output/                  # Output directory (generated after running)
-    ├── run_001.xlsx
-    ├── run_001_config.json
-    └── ...
+├── output/                  # Output directory (generated after running)
+│   ├── run_001.xlsx
+│   ├── run_001_config.json
+│   ├── run_001_metadata.json
+│   └── ...
+├── logs/                    # Log directory (generated after running)
+│   └── dpoint_trader_*.log
+└── tests/                   # Test directory
+    ├── test_backtester.py
+    ├── test_features.py
+    ├── test_splitter.py
+    ├── test_reporter.py
+    ├── test_main_cli.py
+    └── test_integration.py
 ```
 
 ### Module Responsibilities
 
 | Module | Responsibility |
 |--------|----------------|
+| `main_cli.py` | Main entry, CLI parsing, startup checks, metadata recording |
 | `data_loader.py` | Excel reading, data cleaning, outlier filtering |
 | `feature_dpoint.py` | Build 80+ technical features, generate Dpoint labels |
 | `model_builder.py` | Create sklearn/XGBoost model pipelines |
 | `splitter.py` | Walk-forward time-series splitting |
 | `metrics.py` | Calculate geometric mean return, penalty, trade statistics |
 | `search_engine.py` | Random search main loop, hyperparameter sampling |
-| `backtester_engine.py` | Signal generation, trade simulation, equity calculation |
+| `trainer_optimizer.py` | Trainer API, final model training |
+| `backtester_engine.py` | Signal generation, trade simulation, equity calculation (with costs & slippage) |
 | `reporter.py` | Excel report generation, configuration saving |
 | `persistence.py` | Best configuration saving and loading |
+| `config_schema.py` | Configuration schema definition and validation (engineering) |
+| `structured_logging.py` | Structured logging configuration (engineering) |
+| `setup_check.py` | Startup checks (dependencies, data, output dir) |
 
 ---
 
-## Core Algorithms
+## 🔬 Core Algorithms
 
 ### Dpoint Prediction Model
 
@@ -341,13 +526,150 @@ for iteration in range(runs):
 
 ---
 
-## FAQ
+## 🧪 Testing
 
-### Q1: Error "No module named 'xgboost'" at runtime
+### Run All Tests
 
-**A**: XGBoost is an optional dependency. If not using XGBoost model, you can ignore this error; if needed:
 ```bash
-pip install xgboost
+cd "Ashare_DpointTrader 2.0"
+pytest tests/ -v
+```
+
+### Run Specific Test File
+
+```bash
+# Backtest engine tests
+pytest tests/test_backtester.py -v
+
+# Feature engineering tests
+pytest tests/test_features.py -v
+
+# Data splitter tests
+pytest tests/test_splitter.py -v
+
+# Reporter tests
+pytest tests/test_reporter.py -v
+
+# CLI tests
+pytest tests/test_main_cli.py -v
+
+# Integration tests (slowest)
+pytest tests/test_integration.py -v
+```
+
+### Run Specific Test
+
+```bash
+# Run a single test function
+pytest tests/test_backtester.py::TestTransactionCosts::test_buy_commission_minimum -v
+```
+
+### Run with Coverage
+
+```bash
+# Install coverage tool
+pip install pytest-cov
+
+# Run with coverage report
+pytest --cov=. --cov-report=html
+
+# Open coverage report
+# On Windows: start htmlcov/index.html
+# On Linux/macOS: open htmlcov/index.html
+```
+
+### Test Coverage Summary
+
+| Test Module | Coverage |
+|-------------|----------|
+| `test_backtester.py` | T+1 execution, transaction costs, slippage, position constraints, take-profit/stop-loss |
+| `test_features.py` | Label construction, feature families, no look-ahead bias |
+| `test_splitter.py` | Walk-forward splitting, no data leakage |
+| `test_reporter.py` | Sheet names, config JSON, formula escaping |
+| `test_main_cli.py` | Default path, parameter parsing, startup checks |
+| `test_integration.py` | End-to-end pipeline test |
+
+---
+
+## 🔧 Engineering Features
+
+### 1. Configuration Schema
+
+Strict configuration schema with type checking and validation:
+
+```python
+from config_schema import FullConfig, FeatureConfig, ModelConfig, TradeConfig
+
+config = FullConfig(
+    feature_config=FeatureConfig(windows=[3, 5], ...),  # Type-checked
+    model_config=ModelConfig(model_type="logreg", ...),  # Validated
+    trade_config=TradeConfig(...),
+)
+errors = config.validate()  # Explicit validation
+```
+
+### 2. Structured Logging
+
+Unified logging with JSON output to files and colored console output:
+
+```python
+from structured_logging import setup_logger
+
+logger = setup_logger(
+    name="dpoint_trader",
+    level="INFO",
+    log_dir="./logs",
+    console_output=True,
+    file_output=True,
+)
+
+# Log with extra fields
+logger.info("Starting training", extra={"runs": 100, "seed": 42})
+```
+
+**Log output example:**
+```json
+{"timestamp": "2026-03-14T10:30:00", "level": "INFO", "message": "Starting training", "runs": 100, "seed": 42}
+```
+
+### 3. Full Metadata Recording
+
+Records complete run metadata for reproducibility:
+- Code version (git commit)
+- Python version
+- All dependency versions
+- Data file hash
+- Random seed
+- Hostname and timestamp
+
+**Usage:**
+```bash
+# Metadata recording enabled by default
+python main_cli.py --runs 100
+
+# Reproduce from metadata file
+python main_cli.py --config output/run_001_metadata.json
+```
+
+### 4. One-Command Reproduction
+
+```bash
+# Exact reproduction (same seed, same config)
+python main_cli.py --config output/run_042_metadata.json
+
+# Load config but override parameters
+python main_cli.py --config output/run_042_config.json --runs 500 --seed 123
+```
+
+---
+
+## ❓ FAQ
+
+### Q1: Error "No module named 'xlsxwriter'" at runtime
+
+**A**: xlsxwriter is a required dependency. Install:
+```bash
+pip install xlsxwriter
 ```
 
 ### Q2: Running too slowly
@@ -368,11 +690,12 @@ pip install xgboost
 
 ### Q4: How to reproduce results?
 
-**A**: Fix random seed:
+**A**: Fix random seed and use metadata file:
 ```bash
 python main_cli.py --seed 42 --runs 100
+# or
+python main_cli.py --config output/run_001_metadata.json
 ```
-Use the same seed, same data, and same code version for reproducibility.
 
 ### Q5: How to use `continue` mode?
 
@@ -387,11 +710,33 @@ python main_cli.py --mode continue --runs 100
 
 ### Q6: What does "IN-SAMPLE" warning in output files mean?
 
-**A**: The final report's equity curve is a full-sample fit result (training set = test set), which has look-ahead bias and is overly optimistic. **For real out-of-sample performance, check the walk-forward validation metrics in the `SearchLog` sheet**.
+**A**: The final report's equity curve is a full-sample fit result (training set = test set), which has look-ahead bias and is overly optimistic. **For real out-of-sample performance, check the walk-forward validation metrics in the `WalkForwardSummary` sheet**.
+
+### Q7: Data file not found?
+
+**A**:
+1. Confirm `data/600698_5Y_daily_qfq_20210302_20260302.xlsx` exists
+2. Or use `--data_path` to specify your data file
+3. Or set environment variable:
+   ```bash
+   # Windows
+   set ASHARE_DATA_PATH=path/to/your/data.xlsx
+   
+   # Linux/macOS
+   export ASHARE_DATA_PATH=path/to/your/data.xlsx
+   ```
+
+### Q8: How to adjust transaction costs and slippage?
+
+**A**:
+```bash
+# Customize commission and slippage
+python main_cli.py --commission_rate 0.0003 --slippage_bps 15
+```
 
 ---
 
-## Disclaimer
+## ⚠️ Disclaimer
 
 1. **This software is for learning and research purposes only** and does not constitute investment advice or recommendation.
 
@@ -405,6 +750,26 @@ python main_cli.py --mode continue --runs 100
 
 ---
 
-## Contact
+## 📧 Contact
 
 For questions or suggestions, please contact via GitHub Issues.
+
+---
+
+## 📝 Version History
+
+### Version 2.0 (Current)
+
+**New Features:**
+- ✅ Realistic execution model (transaction costs, slippage, multiple execution price models)
+- ✅ In-sample / out-of-sample results separation (WalkForwardSummary sheet)
+- ✅ Configuration schema (type checking, validation)
+- ✅ Structured logging (JSON format, performance tracking)
+- ✅ Full metadata recording (for reproduction)
+- ✅ Test suite (100+ test cases)
+- ✅ Startup checks (dependencies, data, output directory)
+
+**Improvements:**
+- ✅ Default data path changed to relative path
+- ✅ Completed requirements.txt and pyproject.toml
+- ✅ Documentation fully updated and aligned with actual code

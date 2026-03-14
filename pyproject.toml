@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ashare-dpoint-trader"
+version = "2.0.0"
+description = "A-Share single-stock ML trading strategy system with walk-forward validation"
+authors = [
+    {name = "A-Share Dpoint Trader Contributors"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = [
+    "quantitative-trading",
+    "machine-learning",
+    "a-shares",
+    "backtesting",
+    "walk-forward",
+    "trading-strategy"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    "pandas>=1.3.0",
+    "numpy>=1.20.0",
+    "scikit-learn>=0.24.0",
+    "openpyxl>=3.0.0",
+    "xlsxwriter>=3.0.0",
+    "joblib>=1.1.0",
+]
+
+[project.optional-dependencies]
+xgboost = [
+    "xgboost>=1.5.0",
+]
+xgboost-gpu = [
+    "xgboost-cu112>=1.5.0",  # Adjust according to your CUDA version
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/Ashare_DpointTrader"
+Documentation = "https://github.com/yourusername/Ashare_DpointTrader#readme"
+Repository = "https://github.com/yourusername/Ashare_DpointTrader.git"
+Issues = "https://github.com/yourusername/Ashare_DpointTrader/issues"
+
+[project.scripts]
+dpoint-trader = "main_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*.py"]
+exclude = ["tests*", "test_*"]
+
+[tool.setuptools.package-data]
+"*" = ["data/*.xlsx"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"

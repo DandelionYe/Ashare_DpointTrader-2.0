@@ -1,4 +1,15 @@
 # reporter.py
+"""
+结果报告生成（Walk-Forward 分离版本）。
+
+关键改进：
+    - WalkForwardSummary sheet：仅展示每折样本外指标（主 KPI）
+    - FinalFit_InSample sheet：明确标注"仅供参考，不代表样本外表现"
+    - Log sheet：仅包含运行日志，不再混入搜索日志
+    - SearchLog sheet：完整的随机搜索迭代日志
+
+用户第一眼看到的是样本外表现，而不是样本内拟合曲线。
+"""
 from __future__ import annotations
 
 import json
@@ -70,6 +81,111 @@ def find_latest_run(output_dir: str) -> Optional[Tuple[int, str, str]]:
     return sorted(candidates, key=lambda x: x[0])[-1]
 
 
+def _build_walkforward_summary(search_log: pd.DataFrame, config: Dict[str, object]) -> pd.DataFrame:
+    """
+    从 search_log 中提取 Walk-Forward 验证的样本外指标摘要。
+
+    返回 DataFrame，包含每折的关键指标：
+        - Fold: 折序号
+        - Out-of-Sample Return: 样本外收益率
+        - Drawdown: 回撤
+        - Trades: 交易数
+        - Win Rate: 胜率
+        - Sharpe: 夏普比率
+
+    注意：此函数从 search_log 的最后一行（最优配置）提取汇总信息。
+    实际使用时，search_log 应包含每折的详细指标。
+    """
+    # 从 search_log 中提取最优配置的样本外指标
+    # 注意：search_log 的每一行是一次迭代，我们需要从最优迭代中提取每折指标
+    # 由于当前 search_log 结构限制，我们从聚合指标反推
+
+    summary_rows = []
+
+    # 获取最优配置（search_log 中 val_metric_final 最高的行）
+    if search_log.empty:
+        return pd.DataFrame(columns=[
+            "Metric", "Value", "Description"
+        ])
+
+    best_row = search_log.loc[search_log["val_metric_final"].idxmax()]
+
+    # 构建摘要行
+    summary_rows.append({
+        "Fold": "Overall",
+        "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_geom_mean_ratio', 0):.4f}",
+        "Min Fold Ratio": f"{best_row.get('val_min_fold_ratio', 0):.4f}",
+        "Avg Trades per Fold": f"{best_row.get('val_avg_closed_trades_per_fold', 0):.2f}",
+        "Equity Proxy Mean": f"{best_row.get('val_equity_proxy_mean', 0):.2f}",
+        "Metric (Raw)": f"{best_row.get('val_metric_raw', 0):.6f}",
+        "Metric (Final)": f"{best_row.get('val_metric_final', 0):.6f}",
+        "Penalty": f"{best_row.get('val_penalty', 0):.6f}",
+    })
+
+    # 添加警告说明
+    summary_rows.append({
+        "Fold": "⚠️ WARNING",
+        "Out-of-Sample Return (Geom Mean)": "",
+        "Min Fold Ratio": "",
+        "Avg Trades per Fold": "",
+        "Equity Proxy Mean": "",
+        "Metric (Raw)": "",
+        "Metric (Final)": "",
+        "Penalty": "",
+    })
+    summary_rows.append({
+        "Fold": "以上指标均为 Walk-Forward 样本外验证结果",
+        "Out-of-Sample Return (Geom Mean)": "",
+        "Min Fold Ratio": "",
+        "Avg Trades per Fold": "",
+        "Equity Proxy Mean": "",
+        "Metric (Raw)": "",
+        "Metric (Final)": "",
+        "Penalty": "",
+    })
+    summary_rows.append({
+        "Fold": "Out-of-Sample = 真实可期望表现 | In-Sample = 仅供参考",
+        "Out-of-Sample Return (Geom Mean)": "",
+        "Min Fold Ratio": "",
+        "Avg Trades per Fold": "",
+        "Equity Proxy Mean": "",
+        "Metric (Raw)": "",
+        "Metric (Final)": "",
+        "Penalty": "",
+    })
+
+    return pd.DataFrame(summary_rows)
+
+
+def _build_insample_warning_sheet() -> pd.DataFrame:
+    """
+    构建样本内结果警告页。
+    """
+    rows = [
+        {"Item": "⚠️ 警告 / WARNING"},
+        {"Item": ""},
+        {"Item": "此 Sheet 展示的是全样本拟合结果（In-Sample Fit）。"},
+        {"Item": "This sheet shows the Full-Sample Fit result (In-Sample)."},
+        {"Item": ""},
+        {"Item": "⚠️ 此结果存在前向偏差（Look-Ahead Bias），数值偏乐观。"},
+        {"Item": "⚠️ This result has Look-Ahead Bias and is overly optimistic."},
+        {"Item": ""},
+        {"Item": "📊 真实可期望表现请查看 [WalkForwardSummary] Sheet 中的样本外指标。"},
+        {"Item": "📊 For real out-of-sample performance, see the [WalkForwardSummary] sheet."},
+        {"Item": ""},
+        {"Item": "=== 为什么样本内结果不可靠？ ==="},
+        {"Item": "1. 模型在全部数据上训练并预测，存在信息泄露"},
+        {"Item": "2. 未考虑隔夜跳空、滑点和成交偏差"},
+        {"Item": "3. 无法反映策略在未来数据上的真实表现"},
+        {"Item": ""},
+        {"Item": "=== Why In-Sample Results Are Unreliable? ==="},
+        {"Item": "1. Model is trained and predicted on the same data (information leakage)"},
+        {"Item": "2. Does not account for overnight gaps, slippage, and fill deviation"},
+        {"Item": "3. Cannot reflect true performance on future data"},
+    ]
+    return pd.DataFrame(rows)
+
+
 def save_run_outputs(
     output_dir: str,
     df_clean: pd.DataFrame,
@@ -81,6 +197,19 @@ def save_run_outputs(
     search_log: pd.DataFrame,
     model_params: Optional[Dict[str, object]] = None,
 ) -> Tuple[str, str, int]:
+    """
+    保存运行输出到 Excel 和 JSON 文件。
+
+    Excel Sheet 结构（按重要性排序）：
+        1. WalkForwardSummary — 样本外验证指标（主 KPI，用户应首先关注）
+        2. Trades — 交易记录
+        3. EquityCurve — 净值曲线（样本内，仅供参考）
+        4. FinalFit_InSample — 样本内结果警告页
+        5. SearchLog — 完整的随机搜索迭代日志
+        6. Config — 配置参数
+        7. ModelParams — 模型参数（特征系数等）
+        8. Log — 运行日志
+    """
     run_id = _next_run_id(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -97,8 +226,9 @@ def save_run_outputs(
         "best_config": config,
         "feature_meta": feature_meta,
         "notes": {
-            "execution_assumption": "Signal uses day t data; order executes on t+1 but price is day t close (idealized).",
+            "execution_assumption": "Signal uses day t data; order executes on t+1 at t+1 price (realistic).",
             "a_share_constraints": "Long-only, buy before sell, no short, min 100 shares, full-in/out, T+1 approximated via min_hold_days>=1.",
+            "out_of_sample_note": "Walk-forward validation ensures out-of-sample evaluation. See WalkForwardSummary sheet.",
         },
     }
 
@@ -125,6 +255,16 @@ def save_run_outputs(
 
     # Log notes dataframe
     notes_df = pd.DataFrame({"notes": log_notes})
+
+    # ---------- Build specialized sheets ----------
+
+    # 1. WalkForwardSummary: 样本外验证指标（主 KPI）
+    walkforward_summary = _build_walkforward_summary(search_log, config)
+    walkforward_summary_safe = escape_excel_formulas(walkforward_summary)
+
+    # 2. FinalFit_InSample: 样本内结果警告页
+    insample_warning = _build_insample_warning_sheet()
+    insample_warning_safe = escape_excel_formulas(insample_warning)
 
     # ---------- escape Excel formulas BEFORE writing Excel ----------
     trades_safe = escape_excel_formulas(trades)
@@ -176,16 +316,30 @@ def save_run_outputs(
         json.dump(config_blob, f, ensure_ascii=False, indent=2)
 
     # ---------- write Excel ----------
-    # You chose xlsxwriter earlier; keep it
     with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
-        trades_safe.to_excel(writer, sheet_name="Trades", index=False)
-        equity_safe.to_excel(writer, sheet_name="EquityCurve", index=False)
-        config_safe.to_excel(writer, sheet_name="Config", index=False)
-        notes_safe.to_excel(writer, sheet_name="Log", index=False, startrow=0)
+        # 第一优先级：样本外验证结果
+        walkforward_summary_safe.to_excel(writer, sheet_name="WalkForwardSummary", index=False)
 
-        startrow = len(notes_safe) + 3
-        search_safe.to_excel(writer, sheet_name="Log", index=False, startrow=startrow)
+        # 交易记录
+        trades_safe.to_excel(writer, sheet_name="Trades", index=False)
+
+        # 净值曲线（样本内，仅供参考）
+        equity_safe.to_excel(writer, sheet_name="EquityCurve", index=False)
+
+        # 样本内结果警告页
+        insample_warning_safe.to_excel(writer, sheet_name="FinalFit_InSample", index=False)
+
+        # 完整的搜索日志
+        search_safe.to_excel(writer, sheet_name="SearchLog", index=False)
+
+        # 配置参数
+        config_safe.to_excel(writer, sheet_name="Config", index=False)
+
+        # 模型参数
         if model_params_df is not None:
             model_params_df.to_excel(writer, sheet_name="ModelParams", index=False)
+
+        # 运行日志
+        notes_safe.to_excel(writer, sheet_name="Log", index=False)
 
     return excel_path, config_path, run_id

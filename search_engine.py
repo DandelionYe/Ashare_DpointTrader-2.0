@@ -224,6 +224,8 @@ def _eval_candidate(
     wf_min_rows: int,
     seed: int,
     feat_cache: Dict[str, Tuple[pd.DataFrame, pd.Series, FeatureMeta]],
+    exec_price_model: str = "next_open",
+    slippage_bps: float = 10.0,
 ) -> Tuple[float, float, Dict[str, object]]:
     """
     对单个候选配置做 walk-forward 回测，返回 (metric, equity_proxy, info)。
@@ -238,6 +240,10 @@ def _eval_candidate(
     Perf-03 早停剪枝：
         若某折净值低于 initial_cash * _EARLY_STOP_EQUITY_RATIO，
         直接返回 -inf，不再计算剩余折，节省后续模型训练和回测的开销。
+    
+    新增参数：
+        exec_price_model — 执行价模型（默认 "next_open"）
+        slippage_bps     — 滑点（基点），默认 10 bps
     """
     feat_cfg = candidate["feature_config"]
     trade_cfg = candidate["trade_config"]
@@ -284,7 +290,11 @@ def _eval_candidate(
             model.fit(X_tr, y_tr)
 
         dp_val = predict_dpoint(model, X_va)
-        fold_stats = backtest_fold_stats(df_clean, X_va, dp_val, trade_cfg)
+        fold_stats = backtest_fold_stats(
+            df_clean, X_va, dp_val, trade_cfg,
+            exec_price_model=exec_price_model,
+            slippage_bps=slippage_bps,
+        )
         eq_end = float(fold_stats["equity_end"])
         n_closed = int(fold_stats["n_closed"])
 
@@ -552,6 +562,8 @@ def random_search_train(
     train_start_ratio: float = 0.5,
     wf_min_rows: int = 80,
     n_jobs: int = -1,
+    exec_price_model: str = "next_open",
+    slippage_bps: float = 10.0,
 ) -> TrainResult:
     """
     持续优化系统（加速版）。
@@ -559,6 +571,11 @@ def random_search_train(
     新增参数：
         n_jobs : joblib 并行进程数。-1 = 使用全部 CPU 核心（推荐）；
                  1 = 串行（调试用）；正整数 = 指定核心数。
+        exec_price_model : 执行价模型（默认 "next_open"）
+                           - "same_close_idealized": t 日信号，t+1 日执行，用 t 日收盘价（理想化）
+                           - "next_open": t 日信号，t+1 日执行，用 t+1 日开盘价（推荐，更真实）
+                           - "next_close": t 日信号，t+1 日执行，用 t+1 日收盘价（保守）
+        slippage_bps : 滑点（基点），默认 10 bps（0.1%）
 
     设计要点：
       - global best 持久化至 output/best_so_far.json（现任始终 = 全局最优）
@@ -660,6 +677,8 @@ def random_search_train(
         best_config, df_clean, max_features,
         n_folds, train_start_ratio, wf_min_rows,
         seed, inc_feat_cache,
+        exec_price_model=exec_price_model,
+        slippage_bps=slippage_bps,
     )
     best_metric = float(m_inc)
     best_equity_proxy = float(eq_inc)
@@ -711,6 +730,8 @@ def random_search_train(
             candidate, df_clean, max_features,
             n_folds, train_start_ratio, wf_min_rows,
             seed, local_cache,
+            exec_price_model=exec_price_model,
+            slippage_bps=slippage_bps,
         )
 
     raw_results: List[Tuple[float, float, Dict[str, object]]] = Parallel(

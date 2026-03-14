@@ -11,17 +11,52 @@
 
 ## 📋 目录
 
+- [快速开始](#-快速开始)
 - [功能特性](#-功能特性)
 - [系统要求](#-系统要求)
 - [安装步骤](#-安装步骤)
-- [快速开始](#-快速开始)
 - [使用说明](#-使用说明)
 - [配置参数](#-配置参数)
+- [真实执行模型](#-真实执行模型)
 - [输出文件](#-输出文件)
 - [项目结构](#-项目结构)
 - [核心算法](#-核心算法)
+- [测试](#-测试)
+- [工程化特性](#-工程化特性)
 - [常见问题](#-常见问题)
 - [免责声明](#-免责声明)
+
+---
+
+## 🚀 快速开始
+
+### 5 分钟开始使用
+
+```bash
+# 1. 克隆项目
+git clone <your-repo-url>
+cd "Ashare_DpointTrader 2.0"
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 验证安装
+python main_cli.py --help
+
+# 4. 运行示例（使用内置示例数据）
+python main_cli.py
+
+# 5. 查看结果（在 output/ 目录）
+# - run_001.xlsx          # 回测报告
+# - run_001_config.json   # 最优配置
+# - run_001_metadata.json # 完整元数据（用于复现）
+```
+
+### 打开 Excel 报告
+
+1. **首先查看** `WalkForwardSummary` Sheet（样本外指标 - 主 KPI）
+2. **然后查看** `Trades` Sheet（交易记录）
+3. `EquityCurve` Sheet 仅供参考（样本内结果）
 
 ---
 
@@ -33,7 +68,8 @@
 - **Walk-forward 验证**: 时间序列交叉验证，避免前向偏差，确保样本外评估
 - **随机搜索优化**: 自动搜索最优特征组合、模型参数和交易策略参数
 - **多模型支持**: Logistic Regression, SGDClassifier, XGBoost (支持 GPU 加速)
-- **A 股交易约束**: 支持 T+1、最小 100 股单位、限制融券等规则
+- **A 股交易约束**: 支持 T+1、最小 100 股单位、仅做多等 A 股规则
+- **真实执行模型**: 交易成本（佣金、印花税、过户费）、滑点、多种执行价模型
 
 ### 技术特性
 
@@ -42,6 +78,8 @@
 - **并行搜索**: 利用多核 CPU 并行评估候选配置
 - **CUDA 加速**: 自动检测并启用 XGBoost GPU 加速
 - **持续学习**: 支持 `continue` 模式，基于历史最优配置继续优化
+- **结构化日志**: JSON 格式日志，支持性能追踪
+- **完整元数据**: 记录代码版本、依赖版本、git commit，支持精确复现
 
 ---
 
@@ -55,13 +93,19 @@
 
 ### Python 依赖
 
+**必需：**
 ```
 pandas>=1.3.0
 numpy>=1.20.0
 scikit-learn>=0.24.0
 openpyxl>=3.0.0        # Excel 读写
-xgboost>=1.5.0         # 可选，用于 XGBoost 模型
+xlsxwriter>=3.0.0      # Excel 输出（必需）
 joblib>=1.1.0          # 并行计算
+```
+
+**可选：**
+```
+xgboost>=1.5.0         # XGBoost 模型（启用 GPU 加速）
 ```
 
 ---
@@ -89,25 +133,37 @@ source venv/bin/activate
 
 ### 3. 安装依赖
 
+**方式 A：使用 requirements.txt（推荐）**
 ```bash
-pip install pandas numpy scikit-learn openpyxl joblib
+pip install -r requirements.txt
+```
+
+**方式 B：使用 pyproject.toml**
+```bash
+pip install .
+```
+
+**方式 C：手动安装**
+```bash
+pip install pandas numpy scikit-learn openpyxl xlsxwriter joblib
 
 # 可选：安装 XGBoost（启用 GPU 加速）
 pip install xgboost
-
-# 如需 GPU 加速，额外安装 CUDA 版本的 XGBoost
-pip install xgboost-cu112  # 根据 CUDA 版本选择
 ```
 
 ### 4. 验证安装
 
 ```bash
-python -c "import pandas, sklearn, xgboost; print('OK')"
+# 快速验证（检查依赖和数据文件）
+python main_cli.py --help
+
+# 或运行启动检查（不执行回测）
+python setup_check.py
 ```
 
 ---
 
-## 🚀 快速开始
+## 🎯 使用说明
 
 ### 默认运行（使用示例数据）
 
@@ -131,11 +187,13 @@ python main_cli.py --mode continue --runs 500
 
 # 使用自己的数据文件
 python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
+
+# 真实执行模式 - 使用开盘价 + 交易成本 + 滑点（推荐）
+python main_cli.py --mode first --runs 100 --exec_price_model next_open --slippage_bps 10
+
+# 复现上次运行
+python main_cli.py --config output/run_001_metadata.json
 ```
-
----
-
-## 📖 使用说明
 
 ### 命令行参数详解
 
@@ -147,6 +205,13 @@ python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
 | `--runs` | 整数 | `100` | 随机搜索迭代次数（建议 100/500/1000/5000） |
 | `--seed` | 整数 | `42` | 随机种子，用于复现结果 |
 | `--initial_cash` | 浮点数 | `100000` | 初始资金（元） |
+| `--exec_price_model` | 字符串 | `next_open` | 执行价模型：`same_close_idealized`, `next_open`, `next_close` |
+| `--slippage_bps` | 浮点数 | `10.0` | 滑点（基点），默认 10 bps（0.1%） |
+| `--commission_rate` | 浮点数 | `0.00025` | 佣金率，默认万分之 2.5 |
+| `--commission_min` | 浮点数 | `5.0` | 最低佣金，默认 5 元 |
+| `--config` | 字符串 | `None` | 从配置文件加载配置（用于复现） |
+| `--record_metadata` | 布尔 | `True` | 记录完整元数据（默认开启） |
+| `--log_dir` | 字符串 | `./logs` | 结构化日志目录 |
 
 ### 运行模式说明
 
@@ -215,19 +280,107 @@ Excel 文件需包含以下列：
 
 ---
 
+## 🔬 真实执行模型
+
+Version 2.0 引入**真实执行模型**，考虑：
+- **执行价模型**: `same_close_idealized`, `next_open`, `next_close`
+- **交易成本**: 佣金、过户费、印花税
+- **滑点**: 固定基点（bps）滑点模型
+
+### 执行价模型
+
+| 模型 | 信号日 | 执行日 | 使用价格 | 说明 |
+|------|--------|--------|----------|------|
+| `same_close_idealized` | t | t+1 | t 日收盘价 | 理想化（旧版行为），低估隔夜跳空 |
+| `next_open` | t | t+1 | t+1 日开盘价 | **推荐**，更真实，捕捉隔夜风险 |
+| `next_close` | t | t+1 | t+1 日收盘价 | 保守估计 |
+
+### 交易成本（A 股标准）
+
+| 费用类型 | 费率 | 方向 | 最低 |
+|----------|------|------|------|
+| **佣金** | 0.025% (2.5‱) | 双向 | 5 元 |
+| **过户费** | 0.001% (0.1‱) | 双向 | - |
+| **印花税** | 0.05% (5‱) | 仅卖出 | - |
+
+**计算示例：**
+
+买入 100 股 @ 10 元：
+- 成交额：100 × 10 = 1,000 元
+- 佣金：max(1,000 × 0.025%, 5) = 5 元
+- 过户费：1,000 × 0.001% = 0.01 元
+- **总成本**: 5.01 元
+
+卖出 100 股 @ 10 元：
+- 成交额：100 × 10 = 1,000 元
+- 佣金：max(1,000 × 0.025%, 5) = 5 元
+- 过户费：1,000 × 0.001% = 0.01 元
+- 印花税：1,000 × 0.05% = 0.5 元
+- **总成本**: 5.51 元
+
+### 滑点模型
+
+滑点以固定基点（bps）调整：
+
+- **买入**: 执行价 = 基准价 × (1 + slippage_bps / 10000)
+- **卖出**: 执行价 = 基准价 × (1 - slippage_bps / 10000)
+
+**默认**: 10 bps (0.1%)
+
+**示例**:
+- 基准价：10.00 元
+- 滑点：10 bps
+- 买入执行价：10.00 × 1.001 = **10.01 元**
+- 卖出执行价：10.00 × 0.999 = **9.99 元**
+
+### 预期影响
+
+从 `same_close_idealized` 切换到 `next_open + fee + slippage` 后：
+
+| 组件 | 典型影响 |
+|------|----------|
+| 隔夜跳空（close→open） | -0.5% ~ -2% / 每笔交易 |
+| 滑点（10 bps） | -0.1% / 每笔交易 |
+| 交易成本 | -0.5% ~ -1% / 每笔往返 |
+| **总计** | **-1% ~ -3% / 每笔交易** |
+
+**高频策略**（年交易次数多）累计影响更大。
+
+---
+
 ## 📊 输出文件
 
 运行完成后，`output/` 目录将生成以下文件：
 
 ### run_XXX.xlsx - 回测报告
 
-| Sheet 名称 | 内容 |
-|------------|------|
-| `EquityCurve` | 净值曲线（日期、净值、持仓等） |
-| `Trades` | 交易记录（买卖日期、价格、收益等） |
-| `SearchLog` | Walk-forward 验证日志（各折样本外指标） |
-| `Data` | 清洗后的输入数据 |
-| `LogNotes` | 运行日志和诊断信息 |
+**重要：Sheet 按重要性排序，请首先查看 [WalkForwardSummary]。**
+
+| Sheet 名称 | 内容 | 优先级 |
+|------------|------|--------|
+| `WalkForwardSummary` | **Walk-Forward 样本外验证指标摘要**（主 KPI） | ⭐⭐⭐⭐⭐ |
+| `Trades` | 交易记录（买卖日期、价格、收益、成本、滑点等） | ⭐⭐⭐⭐ |
+| `EquityCurve` | 净值曲线（日期、净值、持仓、回撤、信号等） | ⭐⭐⭐ |
+| `FinalFit_InSample` | **样本内结果警告**（仅供参考，不代表样本外表现） | ⚠️ |
+| `SearchLog` | 完整的随机搜索迭代日志（每折详细指标、配置参数） | ⭐⭐⭐⭐ |
+| `Config` | 配置参数（特征、模型、交易参数、约束条件） | ⭐⭐⭐ |
+| `ModelParams` | 模型参数（特征系数、标准化参数、截距） | ⭐⭐ |
+| `Log` | 运行日志和诊断信息 | ⭐⭐ |
+
+### 为什么 [WalkForwardSummary] 最重要？
+
+- **样本外验证**: Walk-Forward 每折验证集都是未见过的数据，反映真实可期望表现
+- **无信息泄露**: 训练集和验证集严格分离，避免前向偏差
+- **稳健性评估**: 多折验证可评估策略在不同市场条件下的稳定性
+
+### ⚠️ 为什么 [EquityCurve] 仅供参考？
+
+`EquityCurve` 展示的是**全样本拟合结果**（In-Sample Fit）：
+- 模型在全部数据上训练并预测，存在信息泄露
+- 未考虑隔夜跳空、滑点和成交偏差（除非使用真实执行模型）
+- 数值偏乐观，**不代表未来实盘表现**
+
+**真实样本外表现请查看 [WalkForwardSummary] 和 [SearchLog] 中的指标。**
 
 ### run_XXX_config.json - 配置文件
 
@@ -235,6 +388,18 @@ Excel 文件需包含以下列：
 - 复现运行结果
 - `continue` 模式加载
 - 策略参数存档
+
+### run_XXX_metadata.json - 完整元数据（新增）
+
+包含完整运行元数据：
+- 代码版本（git commit）
+- Python 版本
+- 所有依赖版本
+- 数据文件哈希
+- 随机种子
+- 主机名和时间戳
+
+用于**精确复现**运行。
 
 ### 关键指标说明
 
@@ -266,27 +431,48 @@ Ashare_DpointTrader 2.0/
 ├── reporter.py              # 结果报告生成
 ├── persistence.py           # 配置持久化
 ├── constants.py             # 全局常量
+├── config_schema.py         # 配置 Schema 定义和验证（工程化）
+├── structured_logging.py    # 结构化日志配置（工程化）
+├── setup_check.py           # 启动前检查脚本
+├── requirements.txt         # Python 依赖列表
+├── pyproject.toml           # 项目配置文件
+├── pytest.ini               # pytest 测试配置
 ├── data/                    # 数据目录
 │   └── 600698_5Y_daily_qfq_20210302_20260302.xlsx
-└── output/                  # 输出目录（运行后生成）
-    ├── run_001.xlsx
-    ├── run_001_config.json
-    └── ...
+├── output/                  # 输出目录（运行后生成）
+│   ├── run_001.xlsx
+│   ├── run_001_config.json
+│   ├── run_001_metadata.json
+│   └── ...
+├── logs/                    # 日志目录（运行后生成）
+│   └── dpoint_trader_*.log
+└── tests/                   # 测试目录
+    ├── test_backtester.py
+    ├── test_features.py
+    ├── test_splitter.py
+    ├── test_reporter.py
+    ├── test_main_cli.py
+    └── test_integration.py
 ```
 
 ### 模块职责
 
 | 模块 | 职责 |
 |------|------|
+| `main_cli.py` | 主入口、CLI 参数解析、启动检查、元数据记录 |
 | `data_loader.py` | Excel 读取、数据清洗、异常值过滤 |
 | `feature_dpoint.py` | 构建 80+ 技术特征，生成 Dpoint 标签 |
 | `model_builder.py` | 创建 sklearn/XGBoost 模型管道 |
 | `splitter.py` | Walk-forward 时间序列分割 |
 | `metrics.py` | 计算几何平均收益、惩罚项、交易统计 |
 | `search_engine.py` | 随机搜索主循环、超参数采样 |
-| `backtester_engine.py` | 信号生成、交易模拟、净值计算 |
+| `trainer_optimizer.py` | 训练器 API、最终模型训练 |
+| `backtester_engine.py` | 信号生成、交易模拟、净值计算（含交易成本、滑点） |
 | `reporter.py` | Excel 报告生成、配置保存 |
 | `persistence.py` | 最优配置保存与加载 |
+| `config_schema.py` | 配置 Schema 定义和验证（工程化） |
+| `structured_logging.py` | 结构化日志配置（工程化） |
+| `setup_check.py` | 启动前检查（依赖、数据、输出目录） |
 
 ---
 
@@ -323,9 +509,9 @@ for iteration in range(runs):
         config = sample_global_space()  # 全局探索
     else:
         config = perturb_best_config()  # 局部利用
-    
+
     score = evaluate_walkforward(config)  # Walk-forward 评估
-    
+
     if score > best_score + epsilon:
         best_config = config
         best_score = score
@@ -340,13 +526,143 @@ for iteration in range(runs):
 
 ---
 
+## 🧪 测试
+
+### 运行所有测试
+
+```bash
+cd "Ashare_DpointTrader 2.0"
+pytest tests/ -v
+```
+
+### 运行特定模块
+
+```bash
+# 回测引擎测试
+pytest tests/test_backtester.py -v
+
+# 特征工程测试
+pytest tests/test_features.py -v
+
+# 数据分割测试
+pytest tests/test_splitter.py -v
+
+# 报告生成测试
+pytest tests/test_reporter.py -v
+
+# CLI 测试
+pytest tests/test_main_cli.py -v
+
+# 集成测试（最慢）
+pytest tests/test_integration.py -v
+```
+
+### 生成覆盖率报告
+
+```bash
+# 安装覆盖率工具
+pip install pytest-cov
+
+# 运行并生成覆盖率报告
+pytest --cov=. --cov-report=html
+
+# 查看覆盖率报告
+# Windows: start htmlcov/index.html
+# Linux/macOS: open htmlcov/index.html
+```
+
+### 测试覆盖的关键路径
+
+| 测试模块 | 覆盖内容 |
+|----------|----------|
+| `test_backtester.py` | T+1 执行、交易成本、滑点、持仓约束、止盈止损 |
+| `test_features.py` | 标签构建、特征族、无未来函数 |
+| `test_splitter.py` | Walk-forward 切分、无数据泄露 |
+| `test_reporter.py` | Sheet 名称、配置 JSON、公式转义 |
+| `test_main_cli.py` | 默认路径、参数解析、启动检查 |
+| `test_integration.py` | 完整流程集成测试 |
+
+---
+
+## 🔧 工程化特性
+
+### 1. 配置 Schema 化
+
+使用严格的配置 Schema，替代松散的 dict：
+
+```python
+from config_schema import FullConfig, FeatureConfig, ModelConfig, TradeConfig
+
+config = FullConfig(
+    feature_config=FeatureConfig(windows=[3, 5], ...),  # 类型检查
+    model_config=ModelConfig(model_type="logreg", ...),  # 验证
+    trade_config=TradeConfig(...),
+)
+errors = config.validate()  # 显式验证
+```
+
+### 2. 结构化日志
+
+统一日志格式，输出到文件和控制台：
+
+```python
+from structured_logging import setup_logger
+
+logger = setup_logger(
+    name="dpoint_trader",
+    level="INFO",
+    log_dir="./logs",
+    console_output=True,
+    file_output=True,
+)
+
+# 记录带额外字段的日志
+logger.info("Starting training", extra={"runs": 100, "seed": 42})
+```
+
+**日志输出示例：**
+```json
+{"timestamp": "2026-03-14T10:30:00", "level": "INFO", "message": "Starting training", "runs": 100, "seed": 42}
+```
+
+### 3. 完整元数据记录
+
+记录完整运行元数据用于复现：
+- 代码版本（git commit）
+- Python 版本
+- 所有依赖版本
+- 数据文件哈希
+- 随机种子
+- 主机名和时间戳
+
+**使用方式：**
+```bash
+# 默认自动记录元数据
+python main_cli.py --runs 100
+
+# 从元数据文件复现
+python main_cli.py --config output/run_001_metadata.json
+```
+
+### 4. 一键复现
+
+```bash
+# 精确复现（相同种子，相同配置）
+python main_cli.py --config output/run_042_metadata.json
+
+# 加载配置但修改参数
+python main_cli.py --config output/run_042_config.json --runs 500 --seed 123
+```
+
+---
+
 ## ❓ 常见问题
 
-### Q1: 运行时报错 "No module named 'xgboost'"
+### Q1: 运行时报错 "No module named 'xlsxwriter'"
 
-**A**: XGBoost 是可选依赖。如不使用 XGBoost 模型，可忽略此错误；如需使用：
+**A**: xlsxwriter 是必需依赖。安装：
 ```bash
-pip install xgboost
+pip install xlsxwriter
 ```
 
 ### Q2: 运行速度太慢
@@ -358,7 +674,7 @@ pip install xgboost
 
 ### Q3: 如何用自己的数据？
 
-**A**: 
+**A**:
 1. 准备 Excel 文件，包含必需列（见 [数据文件格式](#数据文件格式)）
 2. 运行：
    ```bash
@@ -367,15 +683,16 @@ pip install xgboost
 
 ### Q4: 结果如何复现？
 
-**A**: 固定随机种子：
+**A**: 固定随机种子并使用元数据文件：
 ```bash
 python main_cli.py --seed 42 --runs 100
+# 或
+python main_cli.py --config output/run_001_metadata.json
 ```
-使用相同种子、相同数据、相同代码版本可复现结果。
 
 ### Q5: `continue` 模式如何使用？
 
-**A**: 
+**A**:
 ```bash
 # 第一次运行
 python main_cli.py --mode first --runs 100
@@ -386,7 +703,29 @@ python main_cli.py --mode continue --runs 100
 
 ### Q6: 输出文件中的 "IN-SAMPLE" 警告是什么意思？
 
-**A**: 最终报告的净值曲线是全样本拟合结果（训练集=测试集），存在前向偏差，数值偏乐观。**真实样本外表现请查看 `SearchLog` sheet 中的 walk-forward 验证指标**。
+**A**: 最终报告的净值曲线是全样本拟合结果（训练集=测试集），存在前向偏差，数值偏乐观。**真实样本外表现请查看 `WalkForwardSummary` sheet 中的 walk-forward 验证指标**。
+
+### Q7: 找不到数据文件？
+
+**A**:
+1. 确认 `data/600698_5Y_daily_qfq_20210302_20260302.xlsx` 存在
+2. 或使用 `--data_path` 指定你的数据文件
+3. 或设置环境变量：
+   ```bash
+   # Windows
+   set ASHARE_DATA_PATH=path/to/your/data.xlsx
+   
+   # Linux/macOS
+   export ASHARE_DATA_PATH=path/to/your/data.xlsx
+   ```
+
+### Q8: 如何调整交易成本和滑点？
+
+**A**:
+```bash
+# 自定义佣金和滑点
+python main_cli.py --commission_rate 0.0003 --slippage_bps 15
+```
 
 ---
 
@@ -408,4 +747,22 @@ python main_cli.py --mode continue --runs 100
 
 如有问题或建议，请通过 GitHub Issues 联系。
 
+---
 
+## 📝 版本历史
+
+### Version 2.0 (当前版本)
+
+**新增功能：**
+- ✅ 真实执行模型（交易成本、滑点、多种执行价模型）
+- ✅ 样本内/样本外结果分离（WalkForwardSummary sheet）
+- ✅ 配置 Schema 化（类型检查、验证）
+- ✅ 结构化日志（JSON 格式、性能追踪）
+- ✅ 完整元数据记录（用于复现）
+- ✅ 测试套件（100+ 测试用例）
+- ✅ 启动检查（依赖、数据、输出目录）
+
+**改进：**
+- ✅ 默认数据路径改为相对路径
+- ✅ 补全 requirements.txt 和 pyproject.toml
+- ✅ 文档全面更新，与实际代码对齐

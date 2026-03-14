@@ -38,9 +38,15 @@ def backtest_fold_stats(
     X_val: pd.DataFrame,
     dpoint_val: pd.Series,
     trade_cfg: Dict[str, object],
+    exec_price_model: str = "next_open",
+    slippage_bps: float = 10.0,
 ) -> Dict[str, float]:
     """
     对单个验证折运行回测，返回关键统计量。
+
+    参数:
+        exec_price_model — 执行价模型（默认 "next_open"）
+        slippage_bps     — 滑点（基点），默认 10 bps
 
     返回字段:
         equity_end  — 验证期末净值
@@ -62,6 +68,8 @@ def backtest_fold_stats(
         max_hold_days=int(trade_cfg.get("max_hold_days", 20)),
         take_profit=trade_cfg.get("take_profit", None),
         stop_loss=trade_cfg.get("stop_loss", None),
+        exec_price_model=exec_price_model,
+        slippage_bps=slippage_bps,
     )
 
     equity_end = (

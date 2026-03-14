@@ -4,6 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
+from datetime import datetime
 from typing import Dict, Optional, List
 
 import warnings
@@ -15,14 +18,148 @@ from data_loader import load_stock_excel
 from trainer_optimizer import random_search_train, train_final_model_and_dpoint
 from backtester_engine import backtest_from_dpoint
 from reporter import save_run_outputs, find_latest_run
+from config_schema import (
+    FullConfig, FeatureConfig, ModelConfig, TradeConfig,
+    RunMetadata, compute_data_hash, get_code_version,
+    get_dependency_versions, get_python_version, get_git_commit, get_hostname
+)
+from structured_logging import setup_logger, log_context, info_extra, error_extra
 
 
-# ====== 你要求的：留出一个位置让你粘贴数据路径 ======
-# ⚠️  本地路径，不要提交到版本控制。建议改用环境变量：
-#     export ASHARE_DATA_PATH="/path/to/your/data.xlsx"
-#     或在 .env 文件中配置后由 python-dotenv 加载。
-DEFAULT_DATA_PATH = r"I:\交易机器学习\项目文件夹\Ashare_DpointTrader 2.0\data\600698_5Y_daily_qfq_20210302_20260302.xlsx"
-# ===================================================
+# =========================================================
+# Startup Checks (确保开箱即用)
+# =========================================================
+def check_dependencies() -> List[str]:
+    """
+    检查必需依赖是否已安装，返回缺失的依赖列表。
+    """
+    missing = []
+    
+    # 核心依赖
+    core_packages = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("sklearn", "scikit-learn"),
+        ("openpyxl", "openpyxl"),
+        ("xlsxwriter", "xlsxwriter"),
+        ("joblib", "joblib"),
+    ]
+    
+    for import_name, pkg_name in core_packages:
+        try:
+            __import__(import_name)
+        except ImportError:
+            missing.append(pkg_name)
+    
+    return missing
+
+
+def check_data_file(data_path: str) -> tuple[bool, str]:
+    """
+    检查数据文件是否存在。
+    返回 (是否存在，错误信息)。
+    """
+    if not os.path.exists(data_path):
+        return False, f"Data file not found: {data_path}"
+    if not os.path.isfile(data_path):
+        return False, f"Path is not a file: {data_path}"
+    if not data_path.endswith(('.xlsx', '.xls')):
+        return False, f"File does not appear to be an Excel file: {data_path}"
+    return True, ""
+
+
+def check_output_dir(output_dir: str) -> tuple[bool, str]:
+    """
+    检查输出目录是否可写。
+    返回 (是否可写，错误信息)。
+    """
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        # 测试写入权限
+        test_file = os.path.join(output_dir, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        return True, ""
+    except PermissionError:
+        return False, f"Permission denied: cannot write to {output_dir}"
+    except Exception as e:
+        return False, f"Cannot access output directory: {e}"
+
+
+def run_startup_checks(data_path: str, output_dir: str) -> bool:
+    """
+    运行所有启动前检查。
+    返回是否通过所有检查。
+    """
+    print("=" * 60)
+    print("A-Share Dpoint Trader 2.0 - Startup Checks")
+    print("=" * 60)
+    
+    all_passed = True
+    
+    # 1. 检查依赖
+    print("\n[1/3] Checking dependencies...")
+    missing_deps = check_dependencies()
+    if missing_deps:
+        print(f"  ❌ Missing dependencies: {', '.join(missing_deps)}")
+        print(f"  💡 Install with: pip install {' '.join(missing_deps)}")
+        all_passed = False
+    else:
+        print("  ✅ All required dependencies installed")
+    
+    # 2. 检查数据文件
+    print(f"\n[2/3] Checking data file...")
+    print(f"  Path: {data_path}")
+    exists, err_msg = check_data_file(data_path)
+    if not exists:
+        print(f"  ❌ {err_msg}")
+        print(f"  💡 Use --data_path to specify your data file")
+        print(f"  💡 Or set ASHARE_DATA_PATH environment variable")
+        all_passed = False
+    else:
+        print(f"  ✅ Data file found")
+    
+    # 3. 检查输出目录
+    print(f"\n[3/3] Checking output directory...")
+    print(f"  Path: {output_dir}")
+    writable, err_msg = check_output_dir(output_dir)
+    if not writable:
+        print(f"  ❌ {err_msg}")
+        all_passed = False
+    else:
+        print(f"  ✅ Output directory is writable")
+    
+    print("\n" + "=" * 60)
+    if all_passed:
+        print("✅ All startup checks passed")
+    else:
+        print("❌ Some startup checks failed. Please fix the issues above.")
+    print("=" * 60)
+    
+    return all_passed
+
+
+# =========================================================
+# Data Path Configuration
+# =========================================================
+def get_default_data_path() -> str:
+    """
+    Get default data file path. Uses relative path based on script location.
+    Falls back to environment variable ASHARE_DATA_PATH if set.
+    """
+    # Check environment variable first
+    env_path = os.environ.get("ASHARE_DATA_PATH")
+    if env_path:
+        return env_path
+
+    # Use relative path based on script location
+    script_dir = Path(__file__).resolve().parent
+    default_relative_path = script_dir / "data" / "600698_5Y_daily_qfq_20210302_20260302.xlsx"
+    return str(default_relative_path)
+
+
+DEFAULT_DATA_PATH = get_default_data_path()
 
 def _get_latest_run_id(output_dir: str) -> int:
     latest = find_latest_run(output_dir)
@@ -52,8 +189,109 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=100, help="Random search iterations (100/1000/5000...).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--initial_cash", type=float, default=100000.0, help="Initial cash for simulation.")
+
+    # Realistic execution parameters
+    parser.add_argument(
+        "--exec_price_model",
+        type=str,
+        default="next_open",
+        choices=["same_close_idealized", "next_open", "next_close"],
+        help="Execution price model. Default: next_open (realistic)."
+    )
+    parser.add_argument(
+        "--slippage_bps",
+        type=float,
+        default=10.0,
+        help="Slippage in basis points. Default: 10 bps (0.1%)."
+    )
+    parser.add_argument(
+        "--commission_rate",
+        type=float,
+        default=0.00025,
+        help="Commission rate. Default: 0.00025 (0.025%)."
+    )
+    parser.add_argument(
+        "--commission_min",
+        type=float,
+        default=5.0,
+        help="Minimum commission. Default: 5 CNY."
+    )
+
+    # Reproducibility and engineering
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config JSON file for reproduction (from previous run)."
+    )
+    parser.add_argument(
+        "--record_metadata",
+        action="store_true",
+        default=True,
+        help="Record full run metadata for reproducibility (default: True)."
+    )
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default="./logs",
+        help="Directory for structured log files."
+    )
     args = parser.parse_args()
 
+    # =========================================================
+    # Setup Structured Logging
+    # =========================================================
+    logger = setup_logger(
+        name="dpoint_trader",
+        level="INFO",
+        log_dir=args.log_dir,
+        console_output=True,
+        file_output=True,
+    )
+
+    # =========================================================
+    # Load Config from File (if specified)
+    # =========================================================
+    if args.config:
+        # Reproduction mode: load config from JSON
+        logger.info(f"Loading config from: {args.config}")
+        try:
+            full_config = FullConfig.from_json_file(args.config)
+            # Override with CLI arguments if provided
+            if args.runs != 100:
+                logger.info(f"Overriding runs from config: {args.runs}")
+            if args.seed != 42:
+                logger.info(f"Overriding seed from config: {args.seed}")
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+            sys.exit(1)
+    else:
+        # Build config from CLI arguments
+        full_config = FullConfig(
+            feature_config=FeatureConfig(),
+            model_config=ModelConfig(),
+            trade_config=TradeConfig(
+                initial_cash=args.initial_cash,
+                buy_threshold=0.55,
+                sell_threshold=0.45,
+                confirm_days=2,
+                min_hold_days=1,
+                exec_price_model=args.exec_price_model,
+                slippage_bps=args.slippage_bps,
+                commission_rate=args.commission_rate,
+                commission_min=args.commission_min,
+            ),
+        )
+        logger.info("Using default/CLI config")
+
+    # =========================================================
+    # Run Startup Checks (before any processing)
+    # =========================================================
+    if not run_startup_checks(args.data_path, args.output_dir):
+        logger.error("Startup checks failed")
+        sys.exit(1)
+
+    logger.info("Startup checks passed")
     df_clean, data_report = load_stock_excel(args.data_path)
     print(f"[INFO] Loaded clean data rows: {len(df_clean)}")
     if len(df_clean) == 0:
@@ -91,6 +329,8 @@ def main() -> None:
         trade_params=trade_params,
         max_features=80,
         n_jobs=6,
+        exec_price_model=args.exec_price_model,
+        slippage_bps=args.slippage_bps,
     )
 
     best_config = train_res.best_config
@@ -111,6 +351,10 @@ def main() -> None:
         max_hold_days=int(tc.get("max_hold_days", 20)),    # ✅ 补全
         take_profit=tc.get("take_profit", None),            # ✅ 补全
         stop_loss=tc.get("stop_loss", None),                # ✅ 补全
+        exec_price_model=args.exec_price_model,
+        slippage_bps=args.slippage_bps,
+        commission_rate=args.commission_rate,
+        commission_min=args.commission_min,
     )
 
     final_equity = float(bt.equity_curve["total_equity"].iloc[-1]) if not bt.equity_curve.empty else float(args.initial_cash)
@@ -172,9 +416,46 @@ def main() -> None:
         model_params=artifacts.get("model_params"),
     )
 
+    # =========================================================
+    # Record Full Run Metadata (for reproducibility)
+    # =========================================================
+    if args.record_metadata:
+        try:
+            data_hash = compute_data_hash(df_clean)
+            metadata = RunMetadata(
+                run_id=run_id,
+                created_at=datetime.now().isoformat(timespec="seconds"),
+                code_version=get_code_version(),
+                python_version=get_python_version(),
+                dependency_versions=get_dependency_versions(),
+                data_hash=data_hash,
+                data_path=args.data_path,
+                random_seed=args.seed,
+                config=FullConfig.from_dict(best_config),
+                git_commit=get_git_commit(),
+                hostname=get_hostname(),
+                notes=[
+                    f"Mode: {args.mode}",
+                    f"Runs: {args.runs}",
+                    f"Effective seed: {seed_effective}",
+                ],
+            )
+            
+            # Save metadata JSON
+            metadata_path = os.path.join(str(args.output_dir), f"run_{run_id:03d}_metadata.json")
+            metadata.save_json(metadata_path)
+            
+            logger.info(f"Saved metadata to: {metadata_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save metadata: {e}")
+
     print(f"[DONE] Saved run {run_id:03d}")
     print(f"  - Excel : {os.path.abspath(excel_path)}")
     print(f"  - Config: {os.path.abspath(config_path)}")
+    if args.record_metadata:
+        print(f"  - Metadata: {os.path.abspath(metadata_path)}")
+    
+    logger.info("Run completed successfully")
 
 
 if __name__ == "__main__":

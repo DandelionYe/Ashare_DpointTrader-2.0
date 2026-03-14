@@ -1,6 +1,11 @@
 # backtester_engine.py
 """
-回测执行引擎（Medium-02 重构版）。
+回测执行引擎（Realistic Execution 版本）。
+
+关键改进：
+    - 执行价模型参数化：支持 same_close_idealized、next_open、next_close
+    - 真实交易成本：佣金、过户费、卖出印花税、最小费用门槛
+    - 滑点模型：固定 bps 滑点，模拟成交偏差
 
 公开 API：
     backtest_from_dpoint(df, dpoint, ...) -> BacktestResult
@@ -16,16 +21,30 @@
 A 股约束：
     - 仅做多，不做空
     - 最小交易单位 100 股
-    - T+1 近似：信号在 t 日生成，t+1 日按 t 日收盘价执行（理想化）
+    - T+1：信号在 t 日生成，t+1 日执行（使用可配置的执行价模型）
     - min_hold_days >= 1 强制模拟 T+1 锁定期
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
+
+
+# =========================================================
+# 常量定义：交易成本参数（A 股典型值）
+# =========================================================
+# 佣金（券商收取，双向），默认万分之 2.5，最低 5 元
+DEFAULT_COMMISSION_RATE: float = 0.00025
+DEFAULT_COMMISSION_MIN: float = 5.0
+
+# 过户费（中登公司收取，双向），默认万分之 0.1
+DEFAULT_TRANSFER_FEE_RATE: float = 0.00001
+
+# 印花税（国家收取，仅卖出），默认千分之 0.5（2023 年 8 月后调整为 0.05%）
+DEFAULT_STAMP_TAX_RATE: float = 0.0005
 
 
 # =========================================================
@@ -36,6 +55,79 @@ class BacktestResult:
     trades: pd.DataFrame
     equity_curve: pd.DataFrame
     notes: List[str]
+
+
+# =========================================================
+# 交易成本计算
+# =========================================================
+def calc_transaction_costs(
+    trade_type: Literal["BUY", "SELL"],
+    shares: int,
+    price: float,
+    commission_rate: float = DEFAULT_COMMISSION_RATE,
+    commission_min: float = DEFAULT_COMMISSION_MIN,
+    transfer_fee_rate: float = DEFAULT_TRANSFER_FEE_RATE,
+    stamp_tax_rate: float = DEFAULT_STAMP_TAX_RATE,
+) -> float:
+    """
+    计算单笔交易的总成本。
+
+    参数：
+        trade_type       : "BUY" 或 "SELL"
+        shares           : 股数
+        price            : 成交价格
+        commission_rate  : 佣金率（默认万分之 2.5）
+        commission_min   : 最低佣金（默认 5 元）
+        transfer_fee_rate: 过户费率（默认万分之 0.1）
+        stamp_tax_rate   : 印花税率（默认千分之 0.5，仅卖出收取）
+
+    返回：
+        总交易成本（元）
+
+    A 股收费规则：
+        - 佣金：双向收取，成交金额的 commission_rate，最低 commission_min 元
+        - 过户费：双向收取，成交金额的 transfer_fee_rate
+        - 印花税：仅卖出收取，成交金额的 stamp_tax_rate
+    """
+    turnover = shares * price
+
+    # 佣金（双向，有最低门槛）
+    commission = max(turnover * commission_rate, commission_min)
+
+    # 过户费（双向）
+    transfer_fee = turnover * transfer_fee_rate
+
+    # 印花税（仅卖出）
+    stamp_tax = turnover * stamp_tax_rate if trade_type == "SELL" else 0.0
+
+    return commission + transfer_fee + stamp_tax
+
+
+def apply_slippage(
+    price: float,
+    trade_type: Literal["BUY", "SELL"],
+    slippage_bps: float = 10.0,
+) -> float:
+    """
+    应用滑点到成交价格。
+
+    参数：
+        price        : 基准价格
+        trade_type   : "BUY" 或 "SELL"
+        slippage_bps : 滑点（基点），默认 10 bps = 0.1%
+
+    返回：
+        滑点调整后的执行价格
+
+    滑点逻辑：
+        - 买入：价格向上调整（更贵的成交价）
+        - 卖出：价格向下调整（更低的成交价）
+    """
+    slippage_ratio = slippage_bps / 10000.0
+    if trade_type == "BUY":
+        return price * (1.0 + slippage_ratio)
+    else:
+        return price * (1.0 - slippage_ratio)
 
 
 # =========================================================
@@ -85,6 +177,15 @@ def _normalize_open_trade(
     trade.setdefault("confirm_days", int(confirm_days))
     trade.setdefault("min_hold_days", int(min_hold_days))
 
+    # 交易成本字段
+    trade.setdefault("buy_commission", np.nan)
+    trade.setdefault("buy_transfer_fee", np.nan)
+    trade.setdefault("sell_commission", np.nan)
+    trade.setdefault("sell_transfer_fee", np.nan)
+    trade.setdefault("sell_stamp_tax", np.nan)
+    trade.setdefault("total_costs", np.nan)
+    trade.setdefault("slippage_bps", np.nan)
+
     return trade
 
 
@@ -106,16 +207,19 @@ def _build_signal_frame(
     返回 DataFrame，列：
         date          — 交易日
         close_qfq     — 后复权收盘价
+        open_qfq      — 后复权开盘价（用于 next_open 执行价模型）
         dpoint        — 当日 Dpoint 值（NaN 表示无信号）
         dp_above_buy  — dpoint > buy_threshold（用于累计 above_cnt）
         dp_below_sell — dpoint < sell_threshold（用于累计 below_cnt）
     """
     close = df["close_qfq"].astype(float)
+    open_ = df["open_qfq"].astype(float)
     dpoint_aligned = dpoint.reindex(df.index)
 
     signal_frame = pd.DataFrame({
         "date": df.index,
         "close_qfq": close,
+        "open_qfq": open_,
         "dpoint": dpoint_aligned,
         "dp_above_buy": dpoint_aligned > buy_threshold,
         "dp_below_sell": dpoint_aligned < sell_threshold,
@@ -140,17 +244,29 @@ def _simulate_execution(
     stop_loss: Optional[float],
     confirm_days: int,
     min_hold_days: int,
+    exec_price_model: Literal["same_close_idealized", "next_open", "next_close"] = "next_open",
+    slippage_bps: float = 10.0,
+    commission_rate: float = DEFAULT_COMMISSION_RATE,
+    commission_min: float = DEFAULT_COMMISSION_MIN,
+    transfer_fee_rate: float = DEFAULT_TRANSFER_FEE_RATE,
+    stamp_tax_rate: float = DEFAULT_STAMP_TAX_RATE,
 ) -> tuple[List[Dict[str, object]], List[Dict[str, object]], List[str]]:
     """
     有状态的逐日执行模拟。读取 _build_signal_frame 的输出，
     维护持仓状态机（挂单 → 成交 → 净值快照）。
 
-    返回 (trade_rows, equity_rows, notes)，由 backtest_from_dpoint 组装为 BacktestResult。
+    新增参数（真实执行）：
+        exec_price_model   : 执行价模型
+                             - "same_close_idealized": t 日信号，t+1 日执行，用 t 日收盘价（理想化，旧版行为）
+                             - "next_open": t 日信号，t+1 日执行，用 t+1 日开盘价（推荐）
+                             - "next_close": t 日信号，t+1 日执行，用 t+1 日收盘价（保守）
+        slippage_bps       : 滑点（基点），默认 10 bps
+        commission_rate    : 佣金率
+        commission_min     : 最低佣金
+        transfer_fee_rate  : 过户费率
+        stamp_tax_rate     : 印花税率
 
-    与 _build_signal_frame 分离的好处：
-        - 可以单独对信号帧的内容编写断言测试
-        - 可以替换信号帧（例如用规则信号代替 ML 信号）而不改动执行层
-        - 两层各自的 Bug 定位更清晰
+    返回 (trade_rows, equity_rows, notes)，由 backtest_from_dpoint 组装为 BacktestResult。
     """
     notes: List[str] = []
     trade_rows: List[Dict[str, object]] = []
@@ -172,6 +288,7 @@ def _simulate_execution(
         row = signal_frame.iloc[i]
         dt: pd.Timestamp = row["date"]
         price_close_t: float = float(row["close_qfq"])
+        price_open_t: float = float(row["open_qfq"])
         dp: float = float(row["dpoint"]) if pd.notna(row["dpoint"]) else float("nan")
         dp_above: bool = bool(row["dp_above_buy"])
         dp_below: bool = bool(row["dp_below_sell"])
@@ -184,15 +301,37 @@ def _simulate_execution(
         # -----------------------------------------------------------
         if pending_order is not None and pending_order.get("exec_date") == dt:
             action = str(pending_order["action"])
-            exec_price = float(pending_order["price"])
-            exec_price_used = exec_price
             signal_date = pd.to_datetime(pending_order["signal_date"])
+
+            # --- 根据执行价模型确定基准执行价 ---
+            if exec_price_model == "same_close_idealized":
+                # 旧版行为：用信号日（t 日）的收盘价
+                base_price = float(pending_order["price"])
+            elif exec_price_model == "next_open":
+                # 推荐：用执行日（t+1 日）的开盘价
+                base_price = price_open_t
+            elif exec_price_model == "next_close":
+                # 保守：用执行日（t+1 日）的收盘价
+                base_price = price_close_t
+            else:
+                raise ValueError(f"Unknown exec_price_model: {exec_price_model}")
+
+            # --- 应用滑点 ---
+            raw_price = base_price
+            exec_price = apply_slippage(raw_price, action, slippage_bps)
+            exec_price_used = exec_price
 
             if action == "BUY":
                 if shares == 0:
                     buy_shares = _calc_buy_shares(cash, exec_price)
                     if buy_shares > 0:
-                        cost = buy_shares * exec_price
+                        # 计算交易成本
+                        commission = calc_transaction_costs(
+                            "BUY", buy_shares, exec_price,
+                            commission_rate, commission_min,
+                            transfer_fee_rate, stamp_tax_rate
+                        )
+                        cost = buy_shares * exec_price + commission
                         cash -= cost
                         shares += buy_shares
                         position_entry_date = dt
@@ -210,6 +349,14 @@ def _simulate_execution(
                             "confirm_days": int(confirm_days),
                             "min_hold_days": int(min_hold_days),
                             "buy_above_cnt_at_signal": int(pending_order.get("above_cnt_at_signal", 0)),
+                            "buy_commission": commission,
+                            "buy_transfer_fee": buy_shares * exec_price * transfer_fee_rate,
+                            "sell_commission": np.nan,
+                            "sell_transfer_fee": np.nan,
+                            "sell_stamp_tax": np.nan,
+                            "total_costs": commission,
+                            "slippage_bps": slippage_bps,
+                            "exec_price_model": exec_price_model,
                         }
                     else:
                         notes.append(f"{dt.date()}: BUY skipped (insufficient cash for 100 shares).")
@@ -224,7 +371,15 @@ def _simulate_execution(
                         else 999_999
                     )
                     if held_days >= min_hold_days:
-                        proceeds = shares * exec_price
+                        # 计算交易成本
+                        commission = calc_transaction_costs(
+                            "SELL", shares, exec_price,
+                            commission_rate, commission_min,
+                            transfer_fee_rate, stamp_tax_rate
+                        )
+                        transfer_fee = shares * exec_price * transfer_fee_rate
+                        stamp_tax = shares * exec_price * stamp_tax_rate
+                        proceeds = shares * exec_price - commission
                         sell_shares = shares
                         cash += proceeds
                         shares = 0
@@ -242,6 +397,12 @@ def _simulate_execution(
                             "cash_after_sell": cash,
                             "sell_dpoint_signal_day": float(pending_order.get("signal_dpoint", np.nan)),
                             "sell_below_cnt_at_signal": int(pending_order.get("below_cnt_at_signal", 0)),
+                            "sell_commission": commission,
+                            "sell_transfer_fee": transfer_fee,
+                            "sell_stamp_tax": stamp_tax,
+                            "total_costs": float(open_trade.get("total_costs", 0.0)) + commission + transfer_fee + stamp_tax,
+                            "slippage_bps": slippage_bps,
+                            "exec_price_model": exec_price_model,
                         })
 
                         buy_cost = float(open_trade.get("buy_cost", 0.0))
@@ -332,12 +493,12 @@ def _simulate_execution(
             if buy_condition_met:
                 signal_today = "BUY_SIGNAL"
                 order_scheduled_for = next_dt
-                reason = f"dpoint连续{confirm_days}天>{buy_threshold} 且空仓 -> BUY_SIGNAL"
+                reason = f"dpoint 连续{confirm_days}天>{buy_threshold} 且空仓 -> BUY_SIGNAL"
                 pending_order = {
                     "action": "BUY",
                     "signal_date": dt,
                     "exec_date": next_dt,
-                    "price": price_close_t,
+                    "price": price_close_t,  # 保留 t 日收盘价用于 same_close_idealized 模型
                     "signal_dpoint": dp,
                     "above_cnt_at_signal": int(above_cnt),
                 }
@@ -349,14 +510,14 @@ def _simulate_execution(
                 order_scheduled_for = next_dt
                 reason = (
                     force_reason if force_sell
-                    else f"dpoint连续{confirm_days}天<{sell_threshold} "
+                    else f"dpoint 连续{confirm_days}天<{sell_threshold} "
                          f"且满足最短持有{min_hold_days}天 -> SELL_SIGNAL"
                 )
                 pending_order = {
                     "action": "SELL",
                     "signal_date": dt,
                     "exec_date": next_dt,
-                    "price": price_close_t,
+                    "price": price_close_t,  # 保留 t 日收盘价用于 same_close_idealized 模型
                     "signal_dpoint": dp,
                     "below_cnt_at_signal": int(below_cnt),
                 }
@@ -370,6 +531,7 @@ def _simulate_execution(
         equity_rows.append({
             "date": dt,
             "close_qfq": price_close_t,
+            "open_qfq": price_open_t,
             "cash": cash,
             "shares": shares,
             "market_value": market_value,
@@ -411,7 +573,7 @@ def _simulate_execution(
 
 
 # =========================================================
-# 公开 API（接口与原版完全一致，无需修改调用方）
+# 公开 API
 # =========================================================
 def backtest_from_dpoint(
     df: pd.DataFrame,
@@ -424,10 +586,15 @@ def backtest_from_dpoint(
     stop_loss: Optional[float] = None,
     confirm_days: int = 2,
     min_hold_days: int = 1,
-    mode_note: str = "Execution: signal at t, execute at t+1 using t close (idealized).",
+    exec_price_model: Literal["same_close_idealized", "next_open", "next_close"] = "next_open",
+    slippage_bps: float = 10.0,
+    commission_rate: float = DEFAULT_COMMISSION_RATE,
+    commission_min: float = DEFAULT_COMMISSION_MIN,
+    transfer_fee_rate: float = DEFAULT_TRANSFER_FEE_RATE,
+    stamp_tax_rate: float = DEFAULT_STAMP_TAX_RATE,
 ) -> BacktestResult:
     """
-    将 Dpoint 序列转化为 A 股回测结果。
+    将 Dpoint 序列转化为 A 股回测结果（真实执行版本）。
 
     流程（三步，对应三个内部函数）：
         1. 数据对齐与预处理
@@ -435,17 +602,27 @@ def backtest_from_dpoint(
         3. _simulate_execution  — 有状态执行模拟
 
     参数说明：
-        df             — 含 date / close_qfq 列的日频行情 DataFrame
-        dpoint         — P(close_{t+1} > close_t | X_t)，index 为日期
-        initial_cash   — 初始资金（元）
-        buy_threshold  — Dpoint 连续高于此值 confirm_days 天触发买入信号
-        sell_threshold — Dpoint 连续低于此值 confirm_days 天触发卖出信号
-        max_hold_days  — 最大持仓日历天数，超过则强制平仓
-        take_profit    — 止盈比例（如 0.12 表示 12%），None 表示不启用
-        stop_loss      — 止损比例（如 0.08 表示 8%），None 表示不启用
-        confirm_days   — 连续满足条件天数，用于平滑信号
-        min_hold_days  — 最短持仓天数（近似 T+1 约束）
-        mode_note      — 写入 notes 的执行模式说明
+        df                 — 含 date / close_qfq / open_qfq 列的日频行情 DataFrame
+        dpoint             — P(close_{t+1} > close_t | X_t)，index 为日期
+        initial_cash       — 初始资金（元）
+        buy_threshold      — Dpoint 连续高于此值 confirm_days 天触发买入信号
+        sell_threshold     — Dpoint 连续低于此值 confirm_days 天触发卖出信号
+        max_hold_days      — 最大持仓日历天数，超过则强制平仓
+        take_profit        — 止盈比例（如 0.12 表示 12%），None 表示不启用
+        stop_loss          — 止损比例（如 0.08 表示 8%），None 表示不启用
+        confirm_days       — 连续满足条件天数，用于平滑信号
+        min_hold_days      — 最短持仓天数（近似 T+1 约束）
+
+        # === 新增：真实执行参数 ===
+        exec_price_model   — 执行价模型（默认 "next_open"）
+                             * "same_close_idealized": t 日信号，t+1 日执行，用 t 日收盘价（理想化，旧版行为）
+                             * "next_open": t 日信号，t+1 日执行，用 t+1 日开盘价（推荐，更真实）
+                             * "next_close": t 日信号，t+1 日执行，用 t+1 日收盘价（保守）
+        slippage_bps       — 滑点（基点），默认 10 bps（0.1%）。买入价上浮，卖出价下浮
+        commission_rate    — 佣金率，默认 0.00025（万分之 2.5）
+        commission_min     — 最低佣金，默认 5 元
+        transfer_fee_rate  — 过户费率，默认 0.00001（万分之 0.1）
+        stamp_tax_rate     — 印花税率，默认 0.0005（千分之 0.5，仅卖出收取）
     """
     # --- 数据预处理 ---
     df = df.sort_values("date").reset_index(drop=True).copy()
@@ -469,9 +646,20 @@ def backtest_from_dpoint(
         stop_loss=stop_loss,
         confirm_days=confirm_days,
         min_hold_days=min_hold_days,
+        exec_price_model=exec_price_model,
+        slippage_bps=slippage_bps,
+        commission_rate=commission_rate,
+        commission_min=commission_min,
+        transfer_fee_rate=transfer_fee_rate,
+        stamp_tax_rate=stamp_tax_rate,
     )
 
     # --- 第三步：组装结果 ---
+    mode_note = (
+        f"Execution: signal at t, execute at t+1 using {exec_price_model}. "
+        f"Slippage={slippage_bps} bps, commission={commission_rate*10000:.1f}/10000 (min {commission_min}), "
+        f"transfer_fee={transfer_fee_rate*10000:.1f}/10000, stamp_tax={stamp_tax_rate*1000:.2f}/1000 (sell only)."
+    )
     notes = [mode_note] + exec_notes
     trades = pd.DataFrame(trade_rows)
     equity_curve = pd.DataFrame(equity_rows)
