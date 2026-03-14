@@ -1,0 +1,81 @@
+{
+  "saved_at": "2026-03-14T09:39:08.004123",
+  "items": [
+    {
+      "metric": 1.1255764858677726,
+      "hash": "8d12f88039ef374ae747b122308dcc33b22f42f1a67fdfa4f9c5bbed63a90450",
+      "config": {
+        "feature_config": {
+          "windows": [
+            5,
+            10,
+            20,
+            60
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": true,
+          "use_turnover": true,
+          "vol_metric": "std",
+          "liq_transform": "ratio"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.00046415888336127773,
+          "penalty": "l1",
+          "class_weight": "balanced"
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.52,
+          "sell_threshold": 0.48,
+          "confirm_days": 2,
+          "min_hold_days": 2,
+          "max_hold_days": 45,
+          "take_profit": 0.15,
+          "stop_loss": 0.05
+        },
+        "split_mode": "walkforward"
+      }
+    },
+    {
+      "metric": 1.0931413616921737,
+      "hash": "d7ed5083a78b3977b443d8dfde6ee114d489fe04542814bf107d072131e07912",
+      "config": {
+        "feature_config": {
+          "windows": [
+            2,
+            10,
+            20,
+            60
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": true,
+          "use_turnover": true,
+          "vol_metric": "std",
+          "liq_transform": "ratio"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.00023207944168063887,
+          "penalty": "l1",
+          "class_weight": "balanced"
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.5050733044673694,
+          "sell_threshold": 0.45507330446736943,
+          "confirm_days": 2,
+          "min_hold_days": 1,
+          "max_hold_days": 45,
+          "take_profit": 0.12873649688485936,
+          "stop_loss": 0.04879966582970997
+        },
+        "split_mode": "walkforward"
+      }
+    }
+  ]
+}

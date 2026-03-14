@@ -1,0 +1,90 @@
+{
+  "run_id": 1,
+  "created_at": "2026-03-14T09:37:27",
+  "data_hash": "1cb8c800de788853bb0dbf8d29a25b5f20aacc10a4ef0dfa4a77aceb0dfd5b0e",
+  "best_config": {
+    "feature_config": {
+      "windows": [
+        5,
+        10,
+        20,
+        60
+      ],
+      "use_momentum": true,
+      "use_volatility": true,
+      "use_volume": false,
+      "use_candle": true,
+      "use_turnover": true,
+      "vol_metric": "std",
+      "liq_transform": "ratio"
+    },
+    "model_config": {
+      "model_type": "sgd",
+      "alpha": 0.00046415888336127773,
+      "penalty": "l1",
+      "class_weight": "balanced"
+    },
+    "trade_config": {
+      "initial_cash": 100000.0,
+      "buy_threshold": 0.52,
+      "sell_threshold": 0.48,
+      "confirm_days": 2,
+      "min_hold_days": 2,
+      "max_hold_days": 45,
+      "take_profit": 0.15,
+      "stop_loss": 0.05
+    },
+    "split_mode": "walkforward"
+  },
+  "feature_meta": {
+    "feature_names": [
+      "ret_1",
+      "ret_5",
+      "ma_5_ratio",
+      "ret_10",
+      "ma_10_ratio",
+      "ret_20",
+      "ma_20_ratio",
+      "ret_60",
+      "ma_60_ratio",
+      "hl_range",
+      "true_range_norm",
+      "vol_std_5",
+      "vol_std_10",
+      "vol_std_20",
+      "vol_std_60",
+      "turnover",
+      "turnover_ma_5",
+      "turnover_std_5",
+      "turnover_ma_10",
+      "turnover_std_10",
+      "turnover_ma_20",
+      "turnover_std_20",
+      "turnover_ma_60",
+      "turnover_std_60",
+      "body",
+      "upper_shadow",
+      "lower_shadow"
+    ],
+    "feature_params": {
+      "windows": [
+        5,
+        10,
+        20,
+        60
+      ],
+      "use_momentum": true,
+      "use_volatility": true,
+      "use_volume": false,
+      "use_candle": true,
+      "use_turnover": true,
+      "vol_metric": "std",
+      "liq_transform": "ratio"
+    },
+    "dpoint_explainer": "Dpoint_t = P(close_{t+1} > close_t | X_t). X_t is built from OHLCV/amount/turnover data up to t only (no future leakage)."
+  },
+  "notes": {
+    "execution_assumption": "Signal uses day t data; order executes on t+1 but price is day t close (idealized).",
+    "a_share_constraints": "Long-only, buy before sell, no short, min 100 shares, full-in/out, T+1 approximated via min_hold_days>=1."
+  }
+}
