@@ -18,7 +18,11 @@ A quantitative trading backtesting framework based on machine learning predictio
 - [Usage](#-usage)
 - [Configuration Schema](#-configuration-schema)
 - [CLI Parameters](#-cli-parameters)
+- [Configuration Priority](#-configuration-priority)
+- [Reproduction Files](#-reproduction-files)
+- [Risk Rules](#-risk-rules)
 - [Realistic Execution](#-realistic-execution)
+- [Data Files](#-data-files)
 - [Output Files](#-output-files)
 - [Project Structure](#-project-structure)
 - [Core Algorithms](#-core-algorithms)
@@ -35,7 +39,7 @@ A quantitative trading backtesting framework based on machine learning predictio
 
 ```bash
 # 1. Clone project
-git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 
 # 2. Install dependencies
@@ -137,7 +141,7 @@ xgboost>=1.5.0         # XGBoost model (GPU acceleration)
 ### 1. Clone or Download Project
 
 ```bash
-git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 ```
 
@@ -329,6 +333,132 @@ The system uses three seeds to ensure reproducibility:
 - **First run (first mode)**: All three seeds are the same
 - **Continue run (continue mode)**: Search Seed = Base Seed + previous run_id
 - **Exact reproduction**: Use `--config run_XXX_metadata.json` with the same `--seed` value
+
+---
+
+## 🔀 Configuration Priority
+
+The system uses a three-level configuration priority to ensure flexibility and reproducibility:
+
+```
+CLI overrides > config file > built-in defaults
+```
+
+| Priority | Source | Description | Example |
+|----------|--------|-------------|---------|
+| **Highest** | CLI parameters | Command-line arguments | `--runs 1000 --seed 42` |
+| **Medium** | Config file | `--config run_XXX_metadata.json` | Load from previous run |
+| **Lowest** | Built-in defaults | Default values in code | `runs=100`, `seed=42` |
+
+**Important Notes**:
+- `--runs` parameter: If using both `--config` and `--runs`, CLI value overrides `search_config.runs` in config file
+- `--seed` parameter: CLI `--seed` is base seed; search seed is calculated based on mode
+- Execution cost parameters (`--slippage_bps`, `--commission_rate`, etc.): CLI non-default values override config file
+
+**Recommended Practice**:
+- Reproduce previous run: `python main_cli.py --config output/run_001_metadata.json` (don't pass `--runs`, use file value)
+- Modify parameters and rerun: `python main_cli.py --config output/run_001_metadata.json --runs 500` (override runs)
+
+---
+
+## 📋 Reproduction Files
+
+The system generates two configuration files with different purposes:
+
+### run_XXX_metadata.json - Full Run Metadata
+
+**Purpose**: Exact reproduction of entire run, including all runtime context.
+
+**Fields**:
+```json
+{
+  "run_id": 1,
+  "created_at": "2026-03-15T10:00:00",
+  "code_version": "abc12345",
+  "python_version": "3.13.7",
+  "dependency_versions": {...},
+  "data_hash": "...",
+  "data_path": "data/600698_5Y_daily_qfq_*.xlsx",
+  "base_seed": 42,
+  "search_seed": 42,
+  "final_train_seed": 42,
+  "mode": "first",
+  "effective_runs": 100,
+  "effective_config_source": "CLI/default",
+  "config": {...},  // Full repro_config
+  "git_commit": "...",
+  "hostname": "...",
+  "notes": [...]
+}
+```
+
+**Usage**:
+```bash
+python main_cli.py --config output/run_001_metadata.json
+```
+
+### run_XXX_config.json - Configuration Snapshot
+
+**Purpose**: Quick viewing and comparison of configurations, for human reading.
+
+**Fields**:
+```json
+{
+  "run_id": 1,
+  "created_at": "...",
+  "data_hash": "...",
+  "best_strategy_config": {...},  // Best strategy params (features/model/trade thresholds only)
+  "repro_config": {...},          // Full repro config (includes execution assumptions/search_config/split params)
+  "run_context": {...},           // Runtime context (mode/seeds/config_source/etc.)
+  "feature_meta": {...},
+  "notes": {...}
+}
+```
+
+**Key Differences**:
+- `best_strategy_config`: Contains only optimizable strategy parameters (feature windows, model hyperparameters, buy/sell thresholds)
+- `repro_config`: Contains all configuration needed for full reproduction (execution costs, slippage, search_config, n_folds, etc.)
+
+**Recommended Practice**:
+- Human viewing/comparison: Open `run_XXX_config.json`
+- Programmatic reproduction: Use either `run_XXX_metadata.json` or `run_XXX_config.json`
+
+---
+
+## ⚠️ Risk Rules
+
+### Take-Profit/Stop-Loss Trigger Mechanism (EOD-based)
+
+The system currently uses **EOD-based (End-of-Day, close price judgment)** mechanism, **not** intraday-based (high/low price judgment).
+
+**Trigger Logic**:
+1. After market close each day, calculate profit/loss ratio using `close_qfq`
+2. If `pnl_ratio >= take_profit`, mark as "EOD take_profit reached", execute sell next day
+3. If `pnl_ratio <= -stop_loss`, mark as "EOD stop_loss reached", execute sell next day
+
+**Will NOT Trigger**:
+- Intraday `high_qfq` touches take-profit, but `close_qfq` doesn't → **NOT triggered**
+- Intraday `low_qfq` breaks stop-loss, but `close_qfq` doesn't → **NOT triggered**
+
+**Example**:
+```
+Day 5 Data:
+  open_qfq:  10.0 CNY
+  high_qfq:  11.5 CNY  (+15%, intraday touches 10% take-profit)
+  low_qfq:   10.0 CNY
+  close_qfq: 10.5 CNY  (+5%, close doesn't touch 10% take-profit)
+
+Result: Take-profit NOT triggered, position continues
+```
+
+**Design Rationale**:
+- EOD-based is more stable, avoids intraday noise triggers
+- Easier to execute in live trading (no real-time monitoring needed)
+- More conservative backtesting, avoids overestimating take-profit/stop-loss effects
+
+**Future Enhancements**:
+- Support `intraday` mode (using `high_qfq`/`low_qfq` judgment)
+- Support `mixed` mode (EOD primary, intraday secondary)
 
 ---
 

@@ -18,7 +18,11 @@
 - [使用说明](#-使用说明)
 - [配置 Schema](#-配置-schema)
 - [命令行参数](#-命令行参数)
+- [配置优先级](#-配置优先级)
+- [复现文件说明](#-复现文件说明)
+- [风险规则说明](#-风险规则说明)
 - [真实执行模型](#-真实执行模型)
+- [数据文件](#-数据文件)
 - [输出文件](#-输出文件)
 - [项目结构](#-项目结构)
 - [核心算法](#-核心算法)
@@ -35,7 +39,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 
 # 2. 安装依赖
@@ -137,7 +141,7 @@ xgboost>=1.5.0         # XGBoost 模型（启用 GPU 加速）
 ### 1. 克隆或下载项目
 
 ```bash
-git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 ```
 
@@ -329,6 +333,132 @@ python main_cli.py --no-record-metadata
 - **首次运行（first 模式）**：三种种子相同
 - **继续运行（continue 模式）**：Search Seed = Base Seed + 上次 run_id
 - **精确复现**：使用 `--config run_XXX_metadata.json` 加载配置，并使用相同的 `--seed` 值
+
+---
+
+## 🔀 配置优先级
+
+系统使用三级配置优先级，确保灵活性和可复现性：
+
+```
+CLI overrides > config file > built-in defaults
+```
+
+| 优先级 | 来源 | 说明 | 示例 |
+|--------|------|------|------|
+| **最高** | CLI 参数 | 命令行传入的参数 | `--runs 1000 --seed 42` |
+| **中等** | 配置文件 | `--config run_XXX_metadata.json` | 从上次运行加载 |
+| **最低** | 内置默认值 | 代码中的默认值 | `runs=100`, `seed=42` |
+
+**重要说明**：
+- `--runs` 参数：如果同时使用 `--config` 和 `--runs`，CLI 的 `--runs` 值会覆盖配置文件中的 `search_config.runs`
+- `--seed` 参数：CLI 的 `--seed` 作为 base seed，search seed 会根据模式自动计算
+- 执行成本参数（`--slippage_bps`、`--commission_rate` 等）：CLI 非默认值会覆盖配置文件
+
+**推荐实践**：
+- 复现上次运行：`python main_cli.py --config output/run_001_metadata.json`（不传 `--runs`，使用文件中的值）
+- 修改参数重新运行：`python main_cli.py --config output/run_001_metadata.json --runs 500`（覆盖 runs）
+
+---
+
+## 📋 复现文件说明
+
+系统生成两种配置文件，用途不同：
+
+### run_XXX_metadata.json - 完整运行元数据
+
+**用途**：精确复现整个运行，包含所有运行时上下文。
+
+**包含字段**：
+```json
+{
+  "run_id": 1,
+  "created_at": "2026-03-15T10:00:00",
+  "code_version": "abc12345",
+  "python_version": "3.13.7",
+  "dependency_versions": {...},
+  "data_hash": "...",
+  "data_path": "data/600698_5Y_daily_qfq_*.xlsx",
+  "base_seed": 42,
+  "search_seed": 42,
+  "final_train_seed": 42,
+  "mode": "first",
+  "effective_runs": 100,
+  "effective_config_source": "CLI/default",
+  "config": {...},  // 完整复现配置 (repro_config)
+  "git_commit": "...",
+  "hostname": "...",
+  "notes": [...]
+}
+```
+
+**使用方法**：
+```bash
+python main_cli.py --config output/run_001_metadata.json
+```
+
+### run_XXX_config.json - 配置快照
+
+**用途**：快速查看和对比配置，便于人工阅读。
+
+**包含字段**：
+```json
+{
+  "run_id": 1,
+  "created_at": "...",
+  "data_hash": "...",
+  "best_strategy_config": {...},  // 最佳策略参数（仅特征/模型/交易阈值）
+  "repro_config": {...},          // 完整复现配置（包含执行假设/search_config/分割参数）
+  "run_context": {...},           // 运行上下文（mode/seeds/config_source 等）
+  "feature_meta": {...},
+  "notes": {...}
+}
+```
+
+**关键区别**：
+- `best_strategy_config`：仅包含可优化的策略参数（特征窗口、模型超参、买卖阈值）
+- `repro_config`：包含完整复现所需的所有配置（执行成本、滑点、search_config、n_folds 等）
+
+**推荐实践**：
+- 人工查看/对比配置：打开 `run_XXX_config.json`
+- 程序化复现：使用 `run_XXX_metadata.json` 或 `run_XXX_config.json` 均可
+
+---
+
+## ⚠️ 风险规则说明
+
+### 止盈/止损触发机制（EOD-based）
+
+系统当前使用 **EOD-based（End-of-Day，收盘价判断）** 机制，**不是** intraday-based（盘中高低点判断）。
+
+**触发逻辑**：
+1. 每日收盘后，使用当日 `close_qfq` 计算盈亏比例
+2. 若 `pnl_ratio >= take_profit`，标记为 "EOD take_profit reached"，次日执行卖出
+3. 若 `pnl_ratio <= -stop_loss`，标记为 "EOD stop_loss reached"，次日执行卖出
+
+**不会触发的情况**：
+- 盘中 `high_qfq` 触及止盈，但 `close_qfq` 未触及 → **不触发**
+- 盘中 `low_qfq` 跌破止损，但 `close_qfq` 未跌破 → **不触发**
+
+**示例**：
+```
+第 5 天数据：
+  open_qfq:  10.0 元
+  high_qfq:  11.5 元  (+15%，盘中触及 10% 止盈)
+  low_qfq:   10.0 元
+  close_qfq: 10.5 元  (+5%，收盘未触及 10% 止盈)
+
+结果：止盈不触发，持仓继续保持
+```
+
+**设计理由**：
+- EOD-based 更稳定，避免盘中噪音触发
+- 实盘更容易执行（无需实时监控）
+- 回测更保守，避免高估止盈/止损效果
+
+**未来可能增强**：
+- 支持 `intraday` 模式（使用 `high_qfq`/`low_qfq` 判断）
+- 支持 `mixed` 模式（EOD 为主，intraday 为辅）
 
 ---
 

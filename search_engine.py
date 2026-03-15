@@ -23,6 +23,8 @@ continue 模式下可直接沿用已有 best_so_far.json，无需重新训练。
 """
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -289,8 +291,9 @@ def _eval_candidate(
     ratios: List[float] = []
     equities: List[float] = []
     closed_trades_list: List[int] = []
+    fold_details: List[Dict[str, object]] = []
 
-    for (X_tr, y_tr), (X_va, y_va) in splits:
+    for fold_idx, ((X_tr, y_tr), (X_va, y_va)) in enumerate(splits):
         model = make_model(candidate, seed=seed)
         if isinstance(model, Pipeline):
             model.fit(X_tr.values, y_tr.values)
@@ -316,6 +319,7 @@ def _eval_candidate(
                 "skip": f"invalid_low_closed_trades(n_closed={n_closed})",
                 "n_features": len(X.columns),
                 "meta": meta,
+                "fold_details": fold_details,
             })
 
         # Perf-03：早停剪枝——该折亏损过重，直接淘汰
@@ -324,7 +328,22 @@ def _eval_candidate(
                 "skip": f"early_stop(fold_equity={eq_end:.0f}<floor={early_stop_floor:.0f})",
                 "n_features": len(X.columns),
                 "meta": meta,
+                "fold_details": fold_details,
             })
+
+        # 记录逐折明细
+        fold_details.append({
+            "fold_id": fold_idx,
+            "train_rows": len(X_tr),
+            "val_rows": len(X_va),
+            "equity_end": eq_end,
+            "equity_ratio": eq_end / initial_cash,
+            "n_closed": n_closed,
+            "exec_price_model": exec_price_model,
+            "slippage_bps": slippage_bps,
+            "commission_rate": commission_rate,
+            "commission_min": commission_min,
+        })
 
         equities.append(eq_end)
         ratios.append(eq_end / initial_cash)
@@ -346,6 +365,7 @@ def _eval_candidate(
         "metric_raw": float(metric_raw),
         "penalty": float(penalty),
         "avg_closed_trades": avg_closed,
+        "fold_details": fold_details,
     })
 
 
@@ -539,6 +559,25 @@ def _sample_exploit(
 # =========================================================
 @dataclass
 class TrainResult:
+    """训练结果数据类
+
+    字段说明：
+        - best_config: 完整配置（包含执行假设），用于向后兼容
+        - best_strategy_config: 策略配置（仅含可优化的策略参数），推荐新代码使用
+        - best_val_metric: 最佳验证指标
+        - best_val_final_equity_proxy: 最佳验证净值代理
+        - search_log: 搜索日志 DataFrame
+        - feature_meta: 特征元数据
+        - training_notes: 训练备注列表
+        - global_best_updated: 全局最优是否更新
+        - global_best_metric_prev: 更新前的全局最优指标
+        - global_best_metric_new: 更新后的全局最优指标
+        - candidate_best_metric: 候选最佳指标
+        - epsilon: 最小改进阈值
+        - not_updated_reason: 未更新原因
+        - best_so_far_path: 全局最优文件路径
+        - best_pool_path: Top-K 池文件路径
+    """
     best_config: Dict[str, object]
     best_val_metric: float
     best_val_final_equity_proxy: float
@@ -554,6 +593,9 @@ class TrainResult:
     not_updated_reason: str
     best_so_far_path: str
     best_pool_path: str
+
+    # 新增字段：策略配置（仅含可优化的策略参数，不含执行假设）
+    best_strategy_config: Optional[Dict[str, object]] = None
 
 
 # =========================================================
@@ -786,6 +828,7 @@ def random_search_train(
             geom = float(info.get("geom_mean_ratio", np.nan))
             min_ratio = float(info.get("min_fold_ratio", np.nan))
             avg_closed = float(info.get("avg_closed_trades", np.nan))
+            fold_details = info.get("fold_details", [])
 
             if metric > candidate_best_metric:
                 candidate_best_metric = float(metric)
@@ -811,6 +854,7 @@ def random_search_train(
                 "constraint_min_closed_trades_per_fold": MIN_CLOSED_TRADES_PER_FOLD,
                 "target_closed_trades_per_fold": TARGET_CLOSED_TRADES_PER_FOLD,
                 "lambda_trade_penalty": LAMBDA_TRADE_PENALTY,
+                "fold_details_json": json.dumps(fold_details, ensure_ascii=False) if fold_details else "[]",
             })
         except Exception as e:
             status = f"error:{type(e).__name__}"
@@ -833,6 +877,7 @@ def random_search_train(
                 "constraint_min_closed_trades_per_fold": MIN_CLOSED_TRADES_PER_FOLD,
                 "target_closed_trades_per_fold": TARGET_CLOSED_TRADES_PER_FOLD,
                 "lambda_trade_penalty": LAMBDA_TRADE_PENALTY,
+                "fold_details_json": "[]",
             })
 
     # --- 更新 Top-K 池 ---
@@ -909,6 +954,15 @@ def random_search_train(
         "dpoint_explainer": meta.dpoint_explainer,
     }
 
+    # 构造 best_strategy_config：仅含可优化的策略参数，不含执行假设
+    # 用于 main_cli.py 中的 build_repro_config 组装完整复现配置
+    best_strategy_config = {
+        "feature_config": best_final_config["feature_config"],
+        "model_config": best_final_config["model_config"],
+        "trade_config": best_final_config["trade_config"],
+        "split_mode": best_final_config.get("split_mode", "walkforward"),
+    }
+
     return TrainResult(
         best_config=best_final_config,
         best_val_metric=float(best_final_metric),
@@ -924,4 +978,5 @@ def random_search_train(
         not_updated_reason=str(not_updated_reason),
         best_so_far_path=best_so_far_path(output_dir),
         best_pool_path=best_pool_path(output_dir),
+        best_strategy_config=best_strategy_config,
     )

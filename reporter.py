@@ -30,7 +30,8 @@ def escape_excel_formulas(df: pd.DataFrame) -> pd.DataFrame:
     """
     df2 = df.copy()
     for col in df2.columns:
-        if df2[col].dtype == "object":
+        # Check for both 'object' (old pandas) and 'string' (new pandas) dtypes
+        if df2[col].dtype == "object" or df2[col].dtype == "string":
             df2[col] = df2[col].apply(
                 lambda v: ("'" + v) if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
             )
@@ -113,36 +114,181 @@ def _build_execution_assumptions(config: Dict[str, object]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_walkforward_summary(search_log: pd.DataFrame, config: Dict[str, object]) -> pd.DataFrame:
+def _build_run_context(
+    run_context: Dict[str, object],
+    repro_config: Dict[str, object],
+) -> pd.DataFrame:
+    """
+    构建运行上下文说明页，展示 mode/seeds/config_source 等运行时信息。
+    """
+    rows = [
+        {"Parameter": "=== Run Mode ===", "Value": "", "Description": ""},
+        {"Parameter": "mode", "Value": str(run_context.get("mode", "N/A")), "Description": "Run mode (first / continue)"},
+        {"Parameter": "config_source", "Value": str(run_context.get("config_source", "CLI/default")), "Description": "Source of effective config"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Random Seeds ===", "Value": "", "Description": ""},
+        {"Parameter": "base_seed", "Value": str(run_context.get("base_seed", "N/A")), "Description": "Base seed from CLI --seed"},
+        {"Parameter": "search_seed", "Value": str(run_context.get("search_seed", "N/A")), "Description": "Search seed (base + latest_run_id)"},
+        {"Parameter": "final_train_seed", "Value": str(run_context.get("final_train_seed", "N/A")), "Description": "Final training seed (same as base)"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Search Configuration ===", "Value": "", "Description": ""},
+        {"Parameter": "effective_runs", "Value": str(run_context.get("effective_runs", "N/A")), "Description": "Actual search iterations from search_config.runs"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Walk-Forward Splits ===", "Value": "", "Description": ""},
+        {"Parameter": "n_folds", "Value": str(repro_config.get("n_folds", "N/A")), "Description": "Number of walk-forward folds"},
+        {"Parameter": "train_start_ratio", "Value": str(repro_config.get("train_start_ratio", "N/A")), "Description": "Initial training set ratio"},
+        {"Parameter": "wf_min_rows", "Value": str(repro_config.get("wf_min_rows", "N/A")), "Description": "Minimum rows per fold"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== System Info ===", "Value": "", "Description": ""},
+        {"Parameter": "git_commit", "Value": str(run_context.get("git_commit", "N/A")), "Description": "Git commit hash"},
+        {"Parameter": "hostname", "Value": str(run_context.get("hostname", "N/A")), "Description": "Hostname where run executed"},
+    ]
+
+    return pd.DataFrame(rows)
+
+
+def _build_walkforward_summary(
+    search_log: pd.DataFrame,
+    config: Dict[str, object],
+) -> pd.DataFrame:
     """
     从 search_log 中提取 Walk-Forward 验证的样本外指标摘要。
 
-    返回 DataFrame，包含每折的关键指标：
-        - Fold: 折序号
-        - Out-of-Sample Return: 样本外收益率
-        - Drawdown: 回撤
-        - Trades: 交易数
-        - Win Rate: 胜率
-        - Sharpe: 夏普比率
-
-    注意：此函数从 search_log 的最后一行（最优配置）提取汇总信息。
-    实际使用时，search_log 应包含每折的详细指标。
+    优先解析 fold_details_json 列（如果存在），否则回退到旧逻辑。
     """
-    # 从 search_log 中提取最优配置的样本外指标
-    # 注意：search_log 的每一行是一次迭代，我们需要从最优迭代中提取每折指标
-    # 由于当前 search_log 结构限制，我们从聚合指标反推
-
-    summary_rows = []
-
-    # 获取最优配置（search_log 中 val_metric_final 最高的行）
     if search_log.empty:
         return pd.DataFrame(columns=[
-            "Metric", "Value", "Description"
+            "Fold", "Out-of-Sample Return (Geom Mean)", "Min Fold Ratio",
+            "Avg Trades per Fold", "Equity Proxy Mean", "Metric (Raw)",
+            "Metric (Final)", "Penalty"
         ])
+
+    # 尝试解析 fold_details_json 列
+    if "fold_details_json" in search_log.columns:
+        # 检查是否有有效的 fold_details
+        valid_fold_details = False
+        for _, row in search_log.iterrows():
+            fd_json = row.get("fold_details_json", "[]")
+            if fd_json and fd_json != "[]":
+                try:
+                    fold_details = json.loads(fd_json)
+                    if fold_details:
+                        valid_fold_details = True
+                        break
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        if valid_fold_details:
+            # 使用 fold_details 构建详细的逐折摘要
+            summary_rows = []
+            
+            # 获取最优配置（search_log 中 val_metric_final 最高的行）
+            best_row = search_log.loc[search_log["val_metric_final"].idxmax()]
+            best_fd_json = best_row.get("fold_details_json", "[]")
+            
+            try:
+                best_fold_details = json.loads(best_fd_json) if best_fd_json else []
+            except (json.JSONDecodeError, TypeError):
+                best_fold_details = []
+
+            if best_fold_details:
+                for fd in best_fold_details:
+                    summary_rows.append({
+                        "Fold": f"Fold {fd.get('fold_id', '?') + 1}",
+                        "Out-of-Sample Return (Geom Mean)": f"{fd.get('equity_ratio', 0):.4f}",
+                        "Drawdown": "",  # 可从 fold_details 扩展
+                        "Trades": str(fd.get('n_closed', 0)),
+                        "Win Rate": "",  # 可从 fold_details 扩展
+                        "Sharpe": "",  # 可从 fold_details 扩展
+                        "Train Rows": str(fd.get('train_rows', 0)),
+                        "Val Rows": str(fd.get('val_rows', 0)),
+                        "Equity End": f"{fd.get('equity_end', 0):.2f}",
+                        "Exec Price Model": str(fd.get('exec_price_model', 'N/A')),
+                        "Slippage": f"{fd.get('slippage_bps', 0):.1f} bps",
+                        "Commission": f"{fd.get('commission_rate', 0)*100:.3f}%",
+                    })
+                
+                # 添加汇总行
+                summary_rows.append({
+                    "Fold": "---",
+                    "Out-of-Sample Return (Geom Mean)": "",
+                    "Drawdown": "",
+                    "Trades": "",
+                    "Win Rate": "",
+                    "Sharpe": "",
+                    "Train Rows": "",
+                    "Val Rows": "",
+                    "Equity End": "",
+                    "Exec Price Model": "",
+                    "Slippage": "",
+                    "Commission": "",
+                })
+
+            # 添加聚合指标
+            summary_rows.append({
+                "Fold": "Overall (Aggregated)",
+                "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_geom_mean_ratio', 0):.4f}",
+                "Drawdown": "",
+                "Trades": f"{best_row.get('val_avg_closed_trades_per_fold', 0):.2f}",
+                "Win Rate": "",
+                "Sharpe": "",
+                "Train Rows": "",
+                "Val Rows": "",
+                "Equity End": "",
+                "Exec Price Model": "",
+                "Slippage": "",
+                "Commission": "",
+            })
+            summary_rows.append({
+                "Fold": "Metric (Raw)",
+                "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_metric_raw', 0):.6f}",
+                "Drawdown": "",
+                "Trades": "",
+                "Win Rate": "",
+                "Sharpe": "",
+                "Train Rows": "",
+                "Val Rows": "",
+                "Equity End": "",
+                "Exec Price Model": "",
+                "Slippage": "",
+                "Commission": "",
+            })
+            summary_rows.append({
+                "Fold": "Metric (Final)",
+                "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_metric_final', 0):.6f}",
+                "Drawdown": "",
+                "Trades": "",
+                "Win Rate": "",
+                "Sharpe": "",
+                "Train Rows": "",
+                "Val Rows": "",
+                "Equity End": "",
+                "Exec Price Model": "",
+                "Slippage": "",
+                "Commission": "",
+            })
+            summary_rows.append({
+                "Fold": "Penalty",
+                "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_penalty', 0):.6f}",
+                "Drawdown": "",
+                "Trades": "",
+                "Win Rate": "",
+                "Sharpe": "",
+                "Train Rows": "",
+                "Val Rows": "",
+                "Equity End": "",
+                "Exec Price Model": "",
+                "Slippage": "",
+                "Commission": "",
+            })
+
+            return pd.DataFrame(summary_rows)
+
+    # Fallback: 旧逻辑（兼容旧文件）
+    summary_rows = []
 
     best_row = search_log.loc[search_log["val_metric_final"].idxmax()]
 
-    # 构建摘要行
     summary_rows.append({
         "Fold": "Overall",
         "Out-of-Sample Return (Geom Mean)": f"{best_row.get('val_geom_mean_ratio', 0):.4f}",
@@ -154,9 +300,19 @@ def _build_walkforward_summary(search_log: pd.DataFrame, config: Dict[str, objec
         "Penalty": f"{best_row.get('val_penalty', 0):.6f}",
     })
 
-    # 添加警告说明
+    # 添加警告说明（旧逻辑）
     summary_rows.append({
         "Fold": "⚠️ WARNING",
+        "Out-of-Sample Return (Geom Mean)": "",
+        "Min Fold Ratio": "",
+        "Avg Trades per Fold": "",
+        "Equity Proxy Mean": "",
+        "Metric (Raw)": "",
+        "Metric (Final)": "",
+        "Penalty": "",
+    })
+    summary_rows.append({
+        "Fold": "Derived from aggregate metrics; fold-level details unavailable",
         "Out-of-Sample Return (Geom Mean)": "",
         "Min Fold Ratio": "",
         "Avg Trades per Fold": "",
@@ -224,7 +380,9 @@ def save_run_outputs(
     log_notes: List[str],
     trades: pd.DataFrame,
     equity_curve: pd.DataFrame,
-    config: Dict[str, object],
+    best_strategy_config: Dict[str, object],
+    repro_config: Dict[str, object],
+    run_context: Dict[str, object],
     feature_meta: Dict[str, object],
     search_log: pd.DataFrame,
     model_params: Optional[Dict[str, object]] = None,
@@ -232,15 +390,22 @@ def save_run_outputs(
     """
     保存运行输出到 Excel 和 JSON 文件。
 
+    参数说明：
+        - best_strategy_config: 最佳策略配置（仅含可优化的策略参数）
+        - repro_config: 完整复现配置（包含所有执行假设和 walk-forward 参数）
+        - run_context: 运行上下文（mode/seeds/config_source/git_commit/hostname 等）
+
     Excel Sheet 结构（按重要性排序）：
         1. WalkForwardSummary — 样本外验证指标（主 KPI，用户应首先关注）
-        2. Trades — 交易记录
-        3. EquityCurve — 净值曲线（样本内，仅供参考）
-        4. FinalFit_InSample — 样本内结果警告页
-        5. SearchLog — 完整的随机搜索迭代日志
-        6. Config — 配置参数
-        7. ModelParams — 模型参数（特征系数等）
-        8. Log — 运行日志
+        2. RunContext — 运行上下文（mode/seeds/config_source 等）
+        3. ExecutionAssumptions — 执行假设说明
+        4. Trades — 交易记录
+        5. EquityCurve — 净值曲线（样本内，仅供参考）
+        6. FinalFit_InSample — 样本内结果警告页
+        7. SearchLog — 完整的随机搜索迭代日志
+        8. Config — 配置参数
+        9. ModelParams — 模型参数（特征系数等）
+        10. Log — 运行日志
     """
     run_id = _next_run_id(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -250,12 +415,15 @@ def save_run_outputs(
 
     df_hash = _hash_dataframe(df_clean)
 
-    # ---------- build config rows FIRST ----------
+    # ---------- build config JSON ----------
+    # 新结构：明确区分 best_strategy_config / repro_config / run_context
     config_blob = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "data_hash": df_hash,
-        "best_config": config,
+        "best_strategy_config": best_strategy_config,
+        "repro_config": repro_config,
+        "run_context": run_context,
         "feature_meta": feature_meta,
         "notes": {
             "execution_assumption": "Signal uses day t data; order executes on t+1 at t+1 price (realistic).",
@@ -264,18 +432,18 @@ def save_run_outputs(
         },
     }
 
-    # Config sheet dataframe
+    # Config sheet dataframe（保持向后兼容，使用 repro_config）
     config_rows = []
     config_rows.append(("run_id", run_id))
     config_rows.append(("created_at", config_blob["created_at"]))
     config_rows.append(("data_hash", df_hash))
-    config_rows.append(("split_mode", config.get("split_mode", "")))
+    config_rows.append(("split_mode", repro_config.get("split_mode", "")))
 
-    for k, v in config.get("feature_config", {}).items():
+    for k, v in repro_config.get("feature_config", {}).items():
         config_rows.append((f"feature.{k}", str(v)))
-    for k, v in config.get("model_config", {}).items():
+    for k, v in repro_config.get("model_config", {}).items():
         config_rows.append((f"model.{k}", str(v)))
-    for k, v in config.get("trade_config", {}).items():
+    for k, v in repro_config.get("trade_config", {}).items():
         config_rows.append((f"trade.{k}", str(v)))
 
     config_rows.append(("constraint.min_closed_trades_per_fold", MIN_CLOSED_TRADES_PER_FOLD))
@@ -291,14 +459,18 @@ def save_run_outputs(
     # ---------- Build specialized sheets ----------
 
     # 1. WalkForwardSummary: 样本外验证指标（主 KPI）
-    walkforward_summary = _build_walkforward_summary(search_log, config)
+    walkforward_summary = _build_walkforward_summary(search_log, repro_config)
     walkforward_summary_safe = escape_excel_formulas(walkforward_summary)
 
-    # 1.5 ExecutionAssumptions: 执行假设说明（新增）
-    execution_assumptions = _build_execution_assumptions(config)
+    # 2. RunContext: 运行上下文（新增）
+    run_context_sheet = _build_run_context(run_context, repro_config)
+    run_context_sheet_safe = escape_excel_formulas(run_context_sheet)
+
+    # 3. ExecutionAssumptions: 执行假设说明
+    execution_assumptions = _build_execution_assumptions(repro_config)
     execution_assumptions_safe = escape_excel_formulas(execution_assumptions)
 
-    # 2. FinalFit_InSample: 样本内结果警告页
+    # 4. FinalFit_InSample: 样本内结果警告页
     insample_warning = _build_insample_warning_sheet()
     insample_warning_safe = escape_excel_formulas(insample_warning)
 
@@ -356,7 +528,10 @@ def save_run_outputs(
         # 第一优先级：样本外验证结果
         walkforward_summary_safe.to_excel(writer, sheet_name="WalkForwardSummary", index=False)
 
-        # 执行假设说明（新增）
+        # 运行上下文（新增）
+        run_context_sheet_safe.to_excel(writer, sheet_name="RunContext", index=False)
+
+        # 执行假设说明
         execution_assumptions_safe.to_excel(writer, sheet_name="ExecutionAssumptions", index=False)
 
         # 交易记录

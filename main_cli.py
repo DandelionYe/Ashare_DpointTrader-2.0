@@ -41,8 +41,6 @@ def resolve_effective_config(args: argparse.Namespace) -> FullConfig:
     后续所有地方只吃 effective_config，不要再散落使用 args.xxx 和硬编码值。
     """
     # 默认 CLI 参数（用于检测用户是否明确传入）
-    DEFAULT_RUNS = 100
-    DEFAULT_SEED = 42
     DEFAULT_INITIAL_CASH = 100000.0
     DEFAULT_EXEC_PRICE_MODEL = "next_open"
     DEFAULT_SLIPPAGE_BPS = 10.0
@@ -52,7 +50,7 @@ def resolve_effective_config(args: argparse.Namespace) -> FullConfig:
     if args.config:
         # 从文件加载配置
         full_config = FullConfig.from_json_file(args.config)
-        
+
         # 应用 CLI 覆盖（只有当 CLI 参数不是默认值时才覆盖）
         # 注意：runs 和 seed 不是 FullConfig 的一部分，它们只在 main() 中使用
         overrides = {}
@@ -66,10 +64,10 @@ def resolve_effective_config(args: argparse.Namespace) -> FullConfig:
             overrides["commission_rate"] = args.commission_rate
         if args.commission_min != DEFAULT_COMMISSION_MIN:
             overrides["commission_min"] = args.commission_min
-        
+
         if overrides:
             full_config = full_config.apply_cli_overrides(**overrides)
-        
+
         return full_config
     else:
         # 从 CLI/default 生成 FullConfig
@@ -88,6 +86,53 @@ def resolve_effective_config(args: argparse.Namespace) -> FullConfig:
                 commission_min=args.commission_min,
             ),
         )
+
+
+def resolve_runtime_values(args: argparse.Namespace, effective_config: FullConfig, latest_run_id: int) -> dict:
+    """
+    统一解析运行时变量，确保所有地方使用一致的值。
+
+    语义说明：
+        1. effective_runs: 从 effective_config.search_config.runs 读取，优先于 args.runs
+        2. base_seed: CLI 传入的基础种子（--seed）
+        3. search_seed: 实际用于随机搜索的种子（base_seed + latest_run_id，仅 continue 模式不同）
+        4. final_train_seed: 用于最终全样本模型训练的种子（始终 = base_seed）
+        5. effective_initial_cash: 从 effective_config.trade_config.initial_cash 读取
+    """
+    base_seed = int(args.seed)
+    return {
+        "effective_runs": int(effective_config.search_config.runs),
+        "base_seed": base_seed,
+        "search_seed": base_seed + int(latest_run_id),
+        "final_train_seed": base_seed,
+        "effective_initial_cash": float(effective_config.trade_config.initial_cash),
+    }
+
+
+def build_repro_config(best_config: dict, effective_config: FullConfig) -> FullConfig:
+    """
+    构造用于复现的完整配置。
+
+    问题：search_engine.py 返回的 best_config 只包含 feature_config / model_config / trade_config，
+         但 trade_config 只包含阈值、持有期、TP/SL，不包含 exec_price_model、滑点、佣金等执行假设。
+
+    解决方案：
+        1. 从 effective_config 复制完整配置（包含所有执行假设）
+        2. 用 best_config 中的策略参数覆盖对应部分
+        3. 返回一个真正可复现的 FullConfig
+    """
+    repro = FullConfig.from_dict(effective_config.to_dict())
+
+    # 用搜索得到的最优策略参数覆盖
+    repro.feature_config = FeatureConfig.from_dict(best_config["feature_config"])
+    repro.model_config = ModelConfig.from_dict(best_config["model_config"])
+
+    # trade_config: 只覆盖阈值/持有期/tp/sl 等策略参数，保留执行假设
+    merged_trade = repro.trade_config.to_dict()
+    merged_trade.update(best_config["trade_config"])
+    repro.trade_config = TradeConfig.from_dict(merged_trade)
+
+    return repro
 
 
 # =========================================================
@@ -266,13 +311,13 @@ def main() -> None:
         "--slippage_bps",
         type=float,
         default=10.0,
-        help="Slippage in basis points (1 bp = 0.01%). Default: 10 bps (0.1%)."
+        help="Slippage in basis points (1 bp = 0.01%%). Default: 10 bps (0.1%%)."
     )
     parser.add_argument(
         "--commission_rate",
         type=float,
         default=0.00025,
-        help="Commission rate (default: 0.00025 = 0.025% = 万分之 2.5)."
+        help="Commission rate (default: 0.00025 = 0.025%% = 万分之 2.5)."
     )
     parser.add_argument(
         "--commission_min",
@@ -318,15 +363,18 @@ def main() -> None:
     # Resolve Effective Config (统一配置入口)
     # =========================================================
     effective_config = resolve_effective_config(args)
-    
+
+    # 打印配置加载优先级
     if args.config:
         logger.info(f"Loaded config from: {args.config}")
+        logger.info("Config priority: CLI overrides > config file > defaults")
         if args.runs != 100:
-            logger.info(f"Overriding runs from config: runs={args.runs}")
+            logger.info(f"Overriding runs from CLI: runs={args.runs} (config file value ignored)")
         if args.seed != 42:
-            logger.info(f"Overriding seed from config: seed={args.seed}")
+            logger.info(f"Overriding seed from CLI: seed={args.seed} (config file value ignored)")
     else:
         logger.info("Using default/CLI config")
+        logger.info("Config priority: CLI args > defaults")
 
     # =========================================================
     # Run Startup Checks (before any processing)
@@ -354,7 +402,14 @@ def main() -> None:
 
     # compute effective seed based on mode and latest run id
     latest_run_id = _get_latest_run_id(args.output_dir) if args.mode == "continue" else 0
-    seed_effective = int(args.seed) + int(latest_run_id)
+
+    # 统一解析运行时变量
+    rt = resolve_runtime_values(args, effective_config, latest_run_id)
+    effective_runs = rt["effective_runs"]
+    base_seed = rt["base_seed"]
+    search_seed = rt["search_seed"]
+    final_train_seed = rt["final_train_seed"]
+    effective_initial_cash = rt["effective_initial_cash"]
 
     # 从 effective_config.search_config 提取随机搜索参数
     search_cfg = effective_config.search_config
@@ -390,8 +445,8 @@ def main() -> None:
 
     train_res = random_search_train(
         df_clean=df_clean,
-        runs=int(args.runs),
-        seed=int(seed_effective),
+        runs=effective_runs,
+        seed=search_seed,
         base_best_config=base_best_config,
         output_dir=str(args.output_dir),
         epsilon=epsilon,
@@ -409,11 +464,15 @@ def main() -> None:
         wf_min_rows=effective_config.wf_min_rows,
     )
 
+    # best_config: 完整配置（包含执行假设），用于向后兼容
+    # best_strategy_config: 策略配置（仅含可优化的策略参数），推荐用于复现配置组装
     best_config = train_res.best_config
+    best_strategy_config = train_res.best_strategy_config if train_res.best_strategy_config else best_config
+
     print(f"[INFO] Best validation metric (geom mean ratio): {train_res.best_val_metric:.6f}")
     print(f"[INFO] Best validation equity proxy (mean): {train_res.best_val_final_equity_proxy:.2f}")
 
-    dpoint, artifacts = train_final_model_and_dpoint(df_clean, best_config, seed=int(args.seed))
+    dpoint, artifacts = train_final_model_and_dpoint(df_clean, best_config, seed=final_train_seed)
 
     tc = best_config["trade_config"]
     bt = backtest_from_dpoint(
@@ -433,7 +492,7 @@ def main() -> None:
         commission_min=effective_config.trade_config.commission_min,
     )
 
-    final_equity = float(bt.equity_curve["total_equity"].iloc[-1]) if not bt.equity_curve.empty else float(args.initial_cash)
+    final_equity = float(bt.equity_curve["total_equity"].iloc[-1]) if not bt.equity_curve.empty else effective_initial_cash
     print(f"[INFO] Full-sample final equity: {final_equity:.2f}")
     print(f"[INFO] Trades executed: {len(bt.trades)}")
 
@@ -451,10 +510,10 @@ def main() -> None:
     log_notes.append("")
     log_notes.append("=== Training Summary / Improvement Confirmation ===")
     log_notes.append(f"Mode: {args.mode}")
-    log_notes.append(f"Runs (search iterations): {args.runs}")
-    log_notes.append(f"Base seed (CLI --seed): {args.seed}")
-    log_notes.append(f"Search seed (base + latest_run_id={latest_run_id}): {seed_effective}")
-    log_notes.append(f"Final train seed (same as base): {args.seed}")
+    log_notes.append(f"Runs (search iterations): {effective_runs}")
+    log_notes.append(f"Base seed (CLI --seed): {base_seed}")
+    log_notes.append(f"Search seed (base + latest_run_id={latest_run_id}): {search_seed}")
+    log_notes.append(f"Final train seed (same as base): {final_train_seed}")
     log_notes.append(f"Best validation metric (geom-mean ratio): {train_res.best_val_metric:.6f}")
     log_notes.append(f"Best validation equity proxy (mean): {train_res.best_val_final_equity_proxy:.2f}")
     log_notes.append(f"Global best metric prev: {train_res.global_best_metric_prev:.6f}")
@@ -481,13 +540,31 @@ def main() -> None:
     log_notes.append(f"Trades executed: {len(bt.trades)}")
     log_notes.extend(bt.notes)
 
+    # 构造复现配置用于保存和 metadata
+    # 使用 best_strategy_config（仅含策略参数）而非 best_config，确保正确组装
+    repro_config = build_repro_config(best_strategy_config, effective_config)
+
+    # 构造运行上下文
+    run_context = {
+        "mode": args.mode,
+        "base_seed": base_seed,
+        "search_seed": search_seed,
+        "final_train_seed": final_train_seed,
+        "effective_runs": effective_runs,
+        "config_source": args.config if args.config else "CLI/default",
+        "git_commit": get_git_commit(),
+        "hostname": get_hostname(),
+    }
+
     excel_path, config_path, run_id = save_run_outputs(
         output_dir=str(args.output_dir),
         df_clean=df_clean,
         log_notes=log_notes,
         trades=bt.trades,
         equity_curve=bt.equity_curve,
-        config=best_config,
+        best_strategy_config=best_strategy_config,
+        repro_config=repro_config.to_dict(),
+        run_context=run_context,
         feature_meta=artifacts["feature_meta"],
         search_log=train_res.search_log,
         model_params=artifacts.get("model_params"),
@@ -499,13 +576,9 @@ def main() -> None:
     if args.record_metadata:
         try:
             data_hash = compute_data_hash(df_clean)
-            # 使用 best_config（从训练中得到）作为复现配置
-            # best_config 已经包含了完整的 feature_config、model_config、trade_config
-            
-            # 明确记录三种种子语义：
-            # 1. base_seed: CLI 传入的基础种子（--seed）
-            # 2. search_seed: 实际用于随机搜索的种子（base_seed + latest_run_id，仅 continue 模式不同）
-            # 3. final_train_seed: 用于最终全样本模型训练的种子（始终 = base_seed）
+            # 使用上面已构造的 repro_config
+
+            # 使用结构化字段记录三种种子语义和运行时上下文
             metadata = RunMetadata(
                 run_id=run_id,
                 created_at=datetime.now().isoformat(timespec="seconds"),
@@ -514,17 +587,19 @@ def main() -> None:
                 dependency_versions=get_dependency_versions(),
                 data_hash=data_hash,
                 data_path=args.data_path,
-                random_seed=args.seed,  # base_seed，用于复现时的 CLI 参数
-                config=FullConfig.from_dict(best_config),
+                base_seed=base_seed,
+                search_seed=search_seed,
+                final_train_seed=final_train_seed,
+                mode=args.mode,
+                effective_runs=effective_runs,
+                effective_config_source=args.config if args.config else "CLI/default",
+                config=repro_config,
                 git_commit=get_git_commit(),
                 hostname=get_hostname(),
                 notes=[
-                    f"Mode: {args.mode}",
-                    f"Runs: {args.runs}",
-                    f"Base seed (CLI --seed): {args.seed}",
-                    f"Search seed (base + latest_run_id={latest_run_id}): {seed_effective}",
-                    f"Final train seed (same as base): {args.seed}",
-                    f"Effective config loaded from: {args.config if args.config else 'CLI/default'}",
+                    f"Base seed (CLI --seed): {base_seed}",
+                    f"Search seed (base + latest_run_id={latest_run_id}): {search_seed}",
+                    f"Final train seed (same as base): {final_train_seed}",
                 ],
             )
 

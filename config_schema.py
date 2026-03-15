@@ -326,17 +326,20 @@ class FullConfig:
 
     def apply_cli_overrides(
         self,
-        runs: Optional[int] = None,
-        seed: Optional[int] = None,
         initial_cash: Optional[float] = None,
         exec_price_model: Optional[str] = None,
         slippage_bps: Optional[float] = None,
         commission_rate: Optional[float] = None,
         commission_min: Optional[float] = None,
+        runs: Optional[int] = None,
     ) -> FullConfig:
         """
         应用 CLI 参数覆盖，返回新的 FullConfig 实例。
         只有当 CLI 参数不是默认值时才覆盖。
+
+        注意：
+            - seed 不是 FullConfig 的一部分，它属于运行上下文，在 runtime/metadata 层管理
+            - runs 属于 search_config，这里可以覆盖
         """
         # 深拷贝当前配置
         new_config = FullConfig.from_dict(self.to_dict())
@@ -353,6 +356,10 @@ class FullConfig:
         if initial_cash is not None:
             new_config.trade_config.initial_cash = initial_cash  # type: ignore
 
+        # 覆盖 SearchConfig 中的 runs
+        if runs is not None:
+            new_config.search_config.runs = runs  # type: ignore
+
         return new_config
 
 
@@ -361,7 +368,27 @@ class FullConfig:
 # =========================================================
 @dataclass
 class RunMetadata:
-    """运行元数据（用于复现和追踪）"""
+    """运行元数据（用于复现和追踪）
+
+    字段说明：
+        - run_id: 运行 ID
+        - created_at: 创建时间
+        - code_version: 代码版本
+        - python_version: Python 版本
+        - dependency_versions: 依赖版本
+        - data_hash: 数据哈希
+        - data_path: 数据路径
+        - base_seed: CLI 传入的基础种子（--seed）
+        - search_seed: 实际用于随机搜索的种子（base_seed + latest_run_id，仅 continue 模式不同）
+        - final_train_seed: 用于最终全样本模型训练的种子（始终 = base_seed）
+        - mode: 运行模式（first / continue）
+        - effective_runs: 实际运行的搜索迭代次数（来自 search_config.runs）
+        - effective_config_source: 配置来源（CLI/default 或文件路径）
+        - config: 完整复现配置
+        - git_commit: Git commit hash
+        - hostname: 主机名
+        - notes: 备注信息
+    """
     run_id: int
     created_at: str
     code_version: str
@@ -369,11 +396,27 @@ class RunMetadata:
     dependency_versions: Dict[str, str]
     data_hash: str
     data_path: str
-    random_seed: int
+
+    # 三种种子语义（结构化字段，用于程序复现）
+    base_seed: int
+    search_seed: int
+    final_train_seed: int
+
+    # 运行时上下文
+    mode: str
+    effective_runs: int
+    effective_config_source: str
+
+    # 完整配置
     config: FullConfig
+
+    # 可选字段
     git_commit: Optional[str] = None
     hostname: Optional[str] = None
     notes: List[str] = field(default_factory=list)
+
+    # 兼容字段（已废弃，保留用于向后兼容旧 metadata）
+    random_seed: Optional[int] = None  # 兼容旧版本，等同于 base_seed
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -385,16 +428,43 @@ class RunMetadata:
             "dependency_versions": self.dependency_versions,
             "data_hash": self.data_hash,
             "data_path": self.data_path,
-            "random_seed": self.random_seed,
+            "base_seed": self.base_seed,
+            "search_seed": self.search_seed,
+            "final_train_seed": self.final_train_seed,
+            "mode": self.mode,
+            "effective_runs": self.effective_runs,
+            "effective_config_source": self.effective_config_source,
             "config": self.config.to_dict(),
             "git_commit": self.git_commit,
             "hostname": self.hostname,
             "notes": self.notes,
+            # 兼容字段
+            "random_seed": self.random_seed if self.random_seed is not None else self.base_seed,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> RunMetadata:
-        """从字典创建"""
+        """从字典创建
+
+        兼容性说明：
+            - 旧 metadata 只有 random_seed 字段，没有 base_seed/search_seed/final_train_seed
+            - 旧 metadata 没有 mode/effective_runs/effective_config_source 字段
+            - 这里提供回退逻辑
+        """
+        # 处理三种种子：优先使用新字段，没有则回退到 random_seed
+        base_seed = data.get("base_seed")
+        search_seed = data.get("search_seed")
+        final_train_seed = data.get("final_train_seed")
+        random_seed = data.get("random_seed", 42)
+
+        # 如果没有结构化种子字段，使用 random_seed 作为回退
+        if base_seed is None:
+            base_seed = random_seed
+        if search_seed is None:
+            search_seed = random_seed
+        if final_train_seed is None:
+            final_train_seed = random_seed
+
         return cls(
             run_id=data["run_id"],
             created_at=data["created_at"],
@@ -403,11 +473,17 @@ class RunMetadata:
             dependency_versions=data.get("dependency_versions", {}),
             data_hash=data.get("data_hash", ""),
             data_path=data.get("data_path", ""),
-            random_seed=data.get("random_seed", 42),
+            base_seed=base_seed,
+            search_seed=search_seed,
+            final_train_seed=final_train_seed,
+            mode=data.get("mode", "first"),
+            effective_runs=data.get("effective_runs", 100),
+            effective_config_source=data.get("effective_config_source", "CLI/default"),
             config=FullConfig.from_dict(data.get("config", {})),
             git_commit=data.get("git_commit"),
             hostname=data.get("hostname"),
             notes=data.get("notes", []),
+            random_seed=random_seed,  # 保留兼容字段
         )
 
     def to_json(self, indent: int = 2) -> str:

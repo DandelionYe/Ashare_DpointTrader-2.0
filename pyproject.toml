@@ -56,10 +56,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Ashare_DpointTrader-2.0"
-Documentation = "https://github.com/Ashare_DpointTrader-2.0#readme"
-Repository = "https://github.com/Ashare_DpointTrader-2.0.git"
-Issues = "https://github.com/Ashare_DpointTrader-2.0/issues"
+Homepage = "https://github.com/DandelionYe/Ashare_DpointTrader-2.0"
+Documentation = "https://github.com/DandelionYe/Ashare_DpointTrader-2.0#readme"
+Repository = "https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git"
+Issues = "https://github.com/DandelionYe/Ashare_DpointTrader-2.0/issues"
 
 [project.scripts]
 dpoint-trader = "main_cli:main"

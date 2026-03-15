@@ -13,6 +13,7 @@ import pytest
 import pandas as pd
 import tempfile
 import os
+import json
 from pathlib import Path
 import sys
 
@@ -184,10 +185,47 @@ class TestIntegration:
             "total_equity": [100000 + i * 100 for i in range(len(sample_data))],
         })
 
-        config = {
+        # 新 API 需要三个配置对象
+        best_strategy_config = {
             "feature_config": {"windows": [3]},
             "model_config": {"model_type": "logreg"},
             "trade_config": {"buy_threshold": 0.55},
+            "split_mode": "walkforward",
+        }
+
+        repro_config = {
+            "feature_config": {"windows": [3]},
+            "model_config": {"model_type": "logreg"},
+            "trade_config": {
+                "buy_threshold": 0.55,
+                "exec_price_model": "next_open",
+                "slippage_bps": 10.0,
+                "commission_rate": 0.00025,
+                "commission_min": 5.0,
+            },
+            "search_config": {
+                "runs": 100,
+                "epsilon": 0.01,
+                "exploit_ratio": 0.7,
+                "top_k": 10,
+                "max_features": 80,
+                "n_jobs": -1,
+            },
+            "split_mode": "walkforward",
+            "n_folds": 4,
+            "train_start_ratio": 0.5,
+            "wf_min_rows": 80,
+        }
+
+        run_context = {
+            "mode": "first",
+            "base_seed": 42,
+            "search_seed": 42,
+            "final_train_seed": 42,
+            "effective_runs": 100,
+            "config_source": "CLI/default",
+            "git_commit": "test",
+            "hostname": "test",
         }
 
         feature_meta = {
@@ -199,6 +237,7 @@ class TestIntegration:
             "iter": 1,
             "val_metric_final": 0.1,
             "val_geom_mean_ratio": 1.05,
+            "fold_details_json": "[]",
         }])
 
         output_dir = str(tmp_path)
@@ -209,7 +248,9 @@ class TestIntegration:
             log_notes=["Integration test"],
             trades=trades,
             equity_curve=equity_curve,
-            config=config,
+            best_strategy_config=best_strategy_config,
+            repro_config=repro_config,
+            run_context=run_context,
             feature_meta=feature_meta,
             search_log=search_log,
         )
@@ -286,13 +327,58 @@ class TestIntegration:
 
         output_dir = str(tmp_path)
 
+        # 新 API 需要三个配置对象
+        best_strategy_config = {
+            "feature_config": config,
+            "model_config": model_config,
+            "trade_config": full_config["trade_config"],
+            "split_mode": "walkforward",
+        }
+
+        repro_config = {
+            "feature_config": config,
+            "model_config": model_config,
+            "trade_config": {
+                **full_config["trade_config"],
+                "exec_price_model": "next_open",
+                "slippage_bps": 10.0,
+                "commission_rate": 0.00025,
+                "commission_min": 5.0,
+            },
+            "search_config": {
+                "runs": 100,
+                "epsilon": 0.01,
+                "exploit_ratio": 0.7,
+                "top_k": 10,
+                "max_features": 80,
+                "n_jobs": -1,
+            },
+            "split_mode": "walkforward",
+            "n_folds": 4,
+            "train_start_ratio": 0.5,
+            "wf_min_rows": 80,
+        }
+
+        run_context = {
+            "mode": "first",
+            "base_seed": 42,
+            "search_seed": 42,
+            "final_train_seed": 42,
+            "effective_runs": 100,
+            "config_source": "CLI/default",
+            "git_commit": "test",
+            "hostname": "test",
+        }
+
         excel_path, config_path, run_id = save_run_outputs(
             output_dir=output_dir,
             df_clean=sample_data,
             log_notes=["Mini pipeline test"],
             trades=trades,
             equity_curve=equity_curve,
-            config=full_config,
+            best_strategy_config=best_strategy_config,
+            repro_config=repro_config,
+            run_context=run_context,
             feature_meta={
                 "feature_names": list(X.columns),
                 "feature_params": config,
@@ -304,6 +390,7 @@ class TestIntegration:
                 "val_geom_mean_ratio": 1.05,
                 "n_features": len(X.columns),
                 "model_type": "logreg",
+                "fold_details_json": "[]",
             }]),
         )
 
@@ -316,3 +403,228 @@ class TestIntegration:
         sheets = xl.sheet_names
         assert "WalkForwardSummary" in sheets
         assert "Trades" in sheets or len(trades) == 0  # 可能没有交易
+
+    def test_repro_config_roundtrip_preserves_search_split_and_exec_assumptions(self, sample_data, tmp_path):
+        """
+        场景：
+            1. 用非默认配置运行一次（search_config.runs=17, n_folds=3, 非默认执行成本）
+            2. 从生成的 config JSON 恢复 repro_config
+            3. 断言第二次恢复出的 repro_config 完整一致
+        """
+        from reporter import save_run_outputs
+
+        # 非默认配置
+        best_strategy_config = {
+            "feature_config": {
+                "windows": [3, 5, 10],
+                "use_momentum": True,
+                "use_volatility": True,
+                "use_volume": False,
+                "use_candle": True,
+                "use_turnover": True,
+                "vol_metric": "mad",
+                "liq_transform": "zscore",
+            },
+            "model_config": {
+                "model_type": "logreg",
+                "C": 0.5,
+                "penalty": "l2",
+                "solver": "liblinear",
+                "class_weight": "balanced",
+            },
+            "trade_config": {
+                "initial_cash": 200000.0,
+                "buy_threshold": 0.58,
+                "sell_threshold": 0.42,
+                "confirm_days": 3,
+                "min_hold_days": 2,
+                "max_hold_days": 20,
+            },
+            "split_mode": "walkforward",
+        }
+
+        repro_config = {
+            "feature_config": best_strategy_config["feature_config"],
+            "model_config": best_strategy_config["model_config"],
+            "trade_config": {
+                **best_strategy_config["trade_config"],
+                "exec_price_model": "next_close",
+                "slippage_bps": 25.0,
+                "commission_rate": 0.0003,
+                "commission_min": 5.0,
+            },
+            "search_config": {
+                "runs": 17,
+                "epsilon": 0.015,
+                "exploit_ratio": 0.65,
+                "top_k": 8,
+                "max_features": 70,
+                "n_jobs": -1,
+            },
+            "split_mode": "walkforward",
+            "n_folds": 3,
+            "train_start_ratio": 0.6,
+            "wf_min_rows": 120,
+        }
+
+        run_context = {
+            "mode": "first",
+            "base_seed": 42,
+            "search_seed": 42,
+            "final_train_seed": 42,
+            "effective_runs": 17,
+            "config_source": "CLI/default",
+            "git_commit": "test123",
+            "hostname": "test-host",
+        }
+
+        trades = pd.DataFrame()
+        equity_curve = pd.DataFrame({
+            "date": sample_data["date"],
+            "total_equity": [100000 + i * 100 for i in range(len(sample_data))],
+        })
+
+        feature_meta = {
+            "feature_names": ["ret_3", "ret_5"],
+            "feature_params": best_strategy_config["feature_config"],
+            "dpoint_explainer": "P(close_{t+1} > close_t | X_t)",
+        }
+
+        search_log = pd.DataFrame([{
+            "iter": 1,
+            "val_metric_final": 0.1,
+            "val_geom_mean_ratio": 1.05,
+            "fold_details_json": "[]",
+        }])
+
+        output_dir = str(tmp_path)
+
+        # 第一次运行
+        excel_path, config_path, run_id = save_run_outputs(
+            output_dir=output_dir,
+            df_clean=sample_data,
+            log_notes=["Roundtrip test"],
+            trades=trades,
+            equity_curve=equity_curve,
+            best_strategy_config=best_strategy_config,
+            repro_config=repro_config,
+            run_context=run_context,
+            feature_meta=feature_meta,
+            search_log=search_log,
+        )
+
+        # 从 JSON 恢复
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_json = json.load(f)
+
+        restored_repro = config_json["repro_config"]
+
+        # 断言配置完整一致
+        assert restored_repro["search_config"]["runs"] == 17
+        assert restored_repro["n_folds"] == 3
+        assert restored_repro["train_start_ratio"] == 0.6
+        assert restored_repro["wf_min_rows"] == 120
+        assert restored_repro["trade_config"]["exec_price_model"] == "next_close"
+        assert restored_repro["trade_config"]["slippage_bps"] == 25.0
+        assert restored_repro["trade_config"]["commission_rate"] == 0.0003
+        assert restored_repro["feature_config"]["windows"] == [3, 5, 10]
+        assert restored_repro["model_config"]["C"] == 0.5
+
+    def test_run_config_json_contains_repro_config_not_only_best_strategy(self, sample_data, tmp_path):
+        """
+        断言：
+            1. run_xxx_config.json 里同时有 best_strategy_config 和 repro_config
+            2. repro_config.search_config.runs 存在
+            3. repro_config.trade_config.exec_price_model 存在
+        """
+        from reporter import save_run_outputs
+
+        best_strategy_config = {
+            "feature_config": {"windows": [3, 5]},
+            "model_config": {"model_type": "logreg", "C": 1.0},
+            "trade_config": {"buy_threshold": 0.55},
+            "split_mode": "walkforward",
+        }
+
+        repro_config = {
+            "feature_config": {"windows": [3, 5]},
+            "model_config": {"model_type": "logreg", "C": 1.0},
+            "trade_config": {
+                "buy_threshold": 0.55,
+                "exec_price_model": "next_close",
+                "slippage_bps": 25.0,
+                "commission_rate": 0.0003,
+                "commission_min": 5.0,
+            },
+            "search_config": {
+                "runs": 17,
+                "epsilon": 0.01,
+                "exploit_ratio": 0.7,
+            },
+            "split_mode": "walkforward",
+            "n_folds": 3,
+            "train_start_ratio": 0.6,
+            "wf_min_rows": 120,
+        }
+
+        run_context = {
+            "mode": "first",
+            "base_seed": 42,
+            "search_seed": 42,
+            "final_train_seed": 42,
+            "effective_runs": 17,
+            "config_source": "CLI/default",
+        }
+
+        trades = pd.DataFrame()
+        equity_curve = pd.DataFrame({
+            "date": sample_data["date"],
+            "total_equity": [100000 + i * 100 for i in range(len(sample_data))],
+        })
+
+        feature_meta = {
+            "feature_names": ["ret_3"],
+            "dpoint_explainer": "test",
+        }
+
+        search_log = pd.DataFrame([{
+            "iter": 1,
+            "val_metric_final": 0.1,
+            "fold_details_json": "[]",
+        }])
+
+        output_dir = str(tmp_path)
+
+        excel_path, config_path, run_id = save_run_outputs(
+            output_dir=output_dir,
+            df_clean=sample_data,
+            log_notes=["JSON structure test"],
+            trades=trades,
+            equity_curve=equity_curve,
+            best_strategy_config=best_strategy_config,
+            repro_config=repro_config,
+            run_context=run_context,
+            feature_meta=feature_meta,
+            search_log=search_log,
+        )
+
+        # 加载 JSON
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_json = json.load(f)
+
+        # 断言 1: 同时有 best_strategy_config 和 repro_config
+        assert "best_strategy_config" in config_json
+        assert "repro_config" in config_json
+        assert "run_context" in config_json
+
+        # 断言 2: repro_config.search_config.runs 存在
+        assert "search_config" in config_json["repro_config"]
+        assert config_json["repro_config"]["search_config"]["runs"] == 17
+
+        # 断言 3: repro_config.trade_config.exec_price_model 存在
+        assert config_json["repro_config"]["trade_config"]["exec_price_model"] == "next_close"
+        assert config_json["repro_config"]["trade_config"]["slippage_bps"] == 25.0
+        assert config_json["repro_config"]["trade_config"]["commission_rate"] == 0.0003
+
+        # 断言 4: best_strategy_config 不包含 search_config
+        assert "search_config" not in config_json["best_strategy_config"]
