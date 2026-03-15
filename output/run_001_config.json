@@ -1,6 +1,6 @@
 {
   "run_id": 1,
-  "created_at": "2026-03-14T09:37:27",
+  "created_at": "2026-03-15T09:00:32",
   "data_hash": "1cb8c800de788853bb0dbf8d29a25b5f20aacc10a4ef0dfa4a77aceb0dfd5b0e",
   "best_config": {
     "feature_config": {
@@ -84,7 +84,8 @@
     "dpoint_explainer": "Dpoint_t = P(close_{t+1} > close_t | X_t). X_t is built from OHLCV/amount/turnover data up to t only (no future leakage)."
   },
   "notes": {
-    "execution_assumption": "Signal uses day t data; order executes on t+1 but price is day t close (idealized).",
-    "a_share_constraints": "Long-only, buy before sell, no short, min 100 shares, full-in/out, T+1 approximated via min_hold_days>=1."
+    "execution_assumption": "Signal uses day t data; order executes on t+1 at t+1 price (realistic).",
+    "a_share_constraints": "Long-only, buy before sell, no short, min 100 shares, full-in/out, T+1 approximated via min_hold_days>=1.",
+    "out_of_sample_note": "Walk-forward validation ensures out-of-sample evaluation. See WalkForwardSummary sheet."
   }
 }

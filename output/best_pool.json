@@ -1,8 +1,159 @@
 {
-  "saved_at": "2026-03-14T09:39:08.004123",
+  "saved_at": "2026-03-15T09:06:04.388305",
   "items": [
     {
-      "metric": 1.1255764858677726,
+      "metric": 1.434165877040881,
+      "hash": "66134b0bea3c367ea2683b9417ff5000f512ac2e6d3303f2cfd15a3dd1f60ac2",
+      "config": {
+        "feature_config": {
+          "windows": [
+            9,
+            13,
+            18
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": false,
+          "use_turnover": false,
+          "vol_metric": "std",
+          "liq_transform": "zscore"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.0002970616853512178,
+          "penalty": "l1",
+          "class_weight": null
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.511540960789641,
+          "sell_threshold": 0.45496859813684976,
+          "confirm_days": 2,
+          "min_hold_days": 4,
+          "max_hold_days": 40,
+          "take_profit": 0.2029176934048185,
+          "stop_loss": 0.07215263065666896
+        },
+        "split_mode": "walkforward"
+      }
+    },
+    {
+      "metric": 1.3864765272939488,
+      "hash": "6901f6f69a2a9d8a4d757c5cd55b839692e93ff9379d0d8833777b2eeb29fd3d",
+      "config": {
+        "feature_config": {
+          "windows": [
+            9,
+            10,
+            13,
+            18
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": false,
+          "use_turnover": false,
+          "vol_metric": "std",
+          "liq_transform": "zscore"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.0003713271066890222,
+          "penalty": "l1",
+          "class_weight": null
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.5065308578639149,
+          "sell_threshold": 0.45653085786391495,
+          "confirm_days": 3,
+          "min_hold_days": 4,
+          "max_hold_days": 40,
+          "take_profit": 0.1782110658849861,
+          "stop_loss": 0.07049718193722485
+        },
+        "split_mode": "walkforward"
+      }
+    },
+    {
+      "metric": 1.3542198799043814,
+      "hash": "5ea664bbff94b091c42dcde29e02a01d8b4c022fa7f8edaa99d121a3e9f5ccf3",
+      "config": {
+        "feature_config": {
+          "windows": [
+            5,
+            9,
+            10,
+            13
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": false,
+          "use_turnover": false,
+          "vol_metric": "std",
+          "liq_transform": "zscore"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.0007426542133780444,
+          "penalty": "l1",
+          "class_weight": null
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.5231173105796715,
+          "sell_threshold": 0.4730678241925169,
+          "confirm_days": 2,
+          "min_hold_days": 3,
+          "max_hold_days": 40,
+          "take_profit": 0.17953903632806045,
+          "stop_loss": 0.07500517008174636
+        },
+        "split_mode": "walkforward"
+      }
+    },
+    {
+      "metric": 1.2189775597438235,
+      "hash": "da36316e0ce9b843adbefb6a91c57cb41dd41f4fd0ec92938a4f092e124b363a",
+      "config": {
+        "feature_config": {
+          "windows": [
+            5,
+            10,
+            13,
+            20
+          ],
+          "use_momentum": true,
+          "use_volatility": true,
+          "use_volume": false,
+          "use_candle": true,
+          "use_turnover": false,
+          "vol_metric": "std",
+          "liq_transform": "zscore"
+        },
+        "model_config": {
+          "model_type": "sgd",
+          "alpha": 0.0007426542133780444,
+          "penalty": "l1",
+          "class_weight": "balanced"
+        },
+        "trade_config": {
+          "initial_cash": 100000.0,
+          "buy_threshold": 0.5043712916445824,
+          "sell_threshold": 0.4543712916445824,
+          "confirm_days": 3,
+          "min_hold_days": 2,
+          "max_hold_days": 50,
+          "take_profit": 0.1643658881085906,
+          "stop_loss": 0.06461826192222651
+        },
+        "split_mode": "walkforward"
+      }
+    },
+    {
+      "metric": 1.0614282164654223,
       "hash": "8d12f88039ef374ae747b122308dcc33b22f42f1a67fdfa4f9c5bbed63a90450",
       "config": {
         "feature_config": {
@@ -35,44 +186,6 @@
           "max_hold_days": 45,
           "take_profit": 0.15,
           "stop_loss": 0.05
-        },
-        "split_mode": "walkforward"
-      }
-    },
-    {
-      "metric": 1.0931413616921737,
-      "hash": "d7ed5083a78b3977b443d8dfde6ee114d489fe04542814bf107d072131e07912",
-      "config": {
-        "feature_config": {
-          "windows": [
-            2,
-            10,
-            20,
-            60
-          ],
-          "use_momentum": true,
-          "use_volatility": true,
-          "use_volume": false,
-          "use_candle": true,
-          "use_turnover": true,
-          "vol_metric": "std",
-          "liq_transform": "ratio"
-        },
-        "model_config": {
-          "model_type": "sgd",
-          "alpha": 0.00023207944168063887,
-          "penalty": "l1",
-          "class_weight": "balanced"
-        },
-        "trade_config": {
-          "initial_cash": 100000.0,
-          "buy_threshold": 0.5050733044673694,
-          "sell_threshold": 0.45507330446736943,
-          "confirm_days": 2,
-          "min_hold_days": 1,
-          "max_hold_days": 45,
-          "take_profit": 0.12873649688485936,
-          "stop_loss": 0.04879966582970997
         },
         "split_mode": "walkforward"
       }
