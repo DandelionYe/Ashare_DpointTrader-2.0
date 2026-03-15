@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
@@ -19,11 +19,75 @@ from trainer_optimizer import random_search_train, train_final_model_and_dpoint
 from backtester_engine import backtest_from_dpoint
 from reporter import save_run_outputs, find_latest_run
 from config_schema import (
-    FullConfig, FeatureConfig, ModelConfig, TradeConfig,
+    FullConfig, FeatureConfig, ModelConfig, TradeConfig, SearchConfig,
     RunMetadata, compute_data_hash, get_code_version,
     get_dependency_versions, get_python_version, get_git_commit, get_hostname
 )
 from structured_logging import setup_logger, log_context, info_extra, error_extra
+
+
+# =========================================================
+# Config Resolution (统一配置入口)
+# =========================================================
+def resolve_effective_config(args: argparse.Namespace) -> FullConfig:
+    """
+    统一配置解析入口。
+    
+    规则：
+        1. 有 --config：先从文件加载 FullConfig
+        2. 再把明确传入的 CLI override 覆盖到这个 config 上
+        3. 没有 --config：再从 CLI/default 生成 FullConfig
+    
+    后续所有地方只吃 effective_config，不要再散落使用 args.xxx 和硬编码值。
+    """
+    # 默认 CLI 参数（用于检测用户是否明确传入）
+    DEFAULT_RUNS = 100
+    DEFAULT_SEED = 42
+    DEFAULT_INITIAL_CASH = 100000.0
+    DEFAULT_EXEC_PRICE_MODEL = "next_open"
+    DEFAULT_SLIPPAGE_BPS = 10.0
+    DEFAULT_COMMISSION_RATE = 0.00025
+    DEFAULT_COMMISSION_MIN = 5.0
+
+    if args.config:
+        # 从文件加载配置
+        full_config = FullConfig.from_json_file(args.config)
+        
+        # 应用 CLI 覆盖（只有当 CLI 参数不是默认值时才覆盖）
+        # 注意：runs 和 seed 不是 FullConfig 的一部分，它们只在 main() 中使用
+        overrides = {}
+        if args.initial_cash != DEFAULT_INITIAL_CASH:
+            overrides["initial_cash"] = args.initial_cash
+        if args.exec_price_model != DEFAULT_EXEC_PRICE_MODEL:
+            overrides["exec_price_model"] = args.exec_price_model
+        if args.slippage_bps != DEFAULT_SLIPPAGE_BPS:
+            overrides["slippage_bps"] = args.slippage_bps
+        if args.commission_rate != DEFAULT_COMMISSION_RATE:
+            overrides["commission_rate"] = args.commission_rate
+        if args.commission_min != DEFAULT_COMMISSION_MIN:
+            overrides["commission_min"] = args.commission_min
+        
+        if overrides:
+            full_config = full_config.apply_cli_overrides(**overrides)
+        
+        return full_config
+    else:
+        # 从 CLI/default 生成 FullConfig
+        return FullConfig(
+            feature_config=FeatureConfig(),
+            model_config=ModelConfig(),
+            trade_config=TradeConfig(
+                initial_cash=args.initial_cash,
+                buy_threshold=0.55,
+                sell_threshold=0.45,
+                confirm_days=2,
+                min_hold_days=1,
+                exec_price_model=args.exec_price_model,
+                slippage_bps=args.slippage_bps,
+                commission_rate=args.commission_rate,
+                commission_min=args.commission_min,
+            ),
+        )
 
 
 # =========================================================
@@ -34,7 +98,7 @@ def check_dependencies() -> List[str]:
     检查必需依赖是否已安装，返回缺失的依赖列表。
     """
     missing = []
-    
+
     # 核心依赖
     core_packages = [
         ("pandas", "pandas"),
@@ -44,13 +108,13 @@ def check_dependencies() -> List[str]:
         ("xlsxwriter", "xlsxwriter"),
         ("joblib", "joblib"),
     ]
-    
+
     for import_name, pkg_name in core_packages:
         try:
             __import__(import_name)
         except ImportError:
             missing.append(pkg_name)
-    
+
     return missing
 
 
@@ -95,9 +159,9 @@ def run_startup_checks(data_path: str, output_dir: str) -> bool:
     print("=" * 60)
     print("A-Share Dpoint Trader 2.0 - Startup Checks")
     print("=" * 60)
-    
+
     all_passed = True
-    
+
     # 1. 检查依赖
     print("\n[1/3] Checking dependencies...")
     missing_deps = check_dependencies()
@@ -107,7 +171,7 @@ def run_startup_checks(data_path: str, output_dir: str) -> bool:
         all_passed = False
     else:
         print("  ✅ All required dependencies installed")
-    
+
     # 2. 检查数据文件
     print(f"\n[2/3] Checking data file...")
     print(f"  Path: {data_path}")
@@ -119,7 +183,7 @@ def run_startup_checks(data_path: str, output_dir: str) -> bool:
         all_passed = False
     else:
         print(f"  ✅ Data file found")
-    
+
     # 3. 检查输出目录
     print(f"\n[3/3] Checking output directory...")
     print(f"  Path: {output_dir}")
@@ -129,14 +193,14 @@ def run_startup_checks(data_path: str, output_dir: str) -> bool:
         all_passed = False
     else:
         print(f"  ✅ Output directory is writable")
-    
+
     print("\n" + "=" * 60)
     if all_passed:
         print("✅ All startup checks passed")
     else:
         print("❌ Some startup checks failed. Please fix the issues above.")
     print("=" * 60)
-    
+
     return all_passed
 
 
@@ -196,25 +260,25 @@ def main() -> None:
         type=str,
         default="next_open",
         choices=["same_close_idealized", "next_open", "next_close"],
-        help="Execution price model. Default: next_open (realistic)."
+        help="Execution price model: same_close_idealized (t signal, t+1 exec at t close), next_open (t signal, t+1 exec at t+1 open, recommended), next_close (t signal, t+1 exec at t+1 close). Default: next_open."
     )
     parser.add_argument(
         "--slippage_bps",
         type=float,
         default=10.0,
-        help="Slippage in basis points. Default: 10 bps (0.1%)."
+        help="Slippage in basis points (1 bp = 0.01%). Default: 10 bps (0.1%)."
     )
     parser.add_argument(
         "--commission_rate",
         type=float,
         default=0.00025,
-        help="Commission rate. Default: 0.00025 (0.025%)."
+        help="Commission rate (default: 0.00025 = 0.025% = 万分之 2.5)."
     )
     parser.add_argument(
         "--commission_min",
         type=float,
         default=5.0,
-        help="Minimum commission. Default: 5 CNY."
+        help="Minimum commission in CNY (default: 5 yuan)."
     )
 
     # Reproducibility and engineering
@@ -225,10 +289,11 @@ def main() -> None:
         help="Path to config JSON file for reproduction (from previous run)."
     )
     parser.add_argument(
-        "--record_metadata",
-        action="store_true",
+        "--record-metadata",
+        dest="record_metadata",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Record full run metadata for reproducibility (default: True)."
+        help="Record full run metadata for reproducibility. Use --no-record-metadata to disable (default: True)."
     )
     parser.add_argument(
         "--log_dir",
@@ -250,38 +315,17 @@ def main() -> None:
     )
 
     # =========================================================
-    # Load Config from File (if specified)
+    # Resolve Effective Config (统一配置入口)
     # =========================================================
+    effective_config = resolve_effective_config(args)
+    
     if args.config:
-        # Reproduction mode: load config from JSON
-        logger.info(f"Loading config from: {args.config}")
-        try:
-            full_config = FullConfig.from_json_file(args.config)
-            # Override with CLI arguments if provided
-            if args.runs != 100:
-                logger.info(f"Overriding runs from config: {args.runs}")
-            if args.seed != 42:
-                logger.info(f"Overriding seed from config: {args.seed}")
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}")
-            sys.exit(1)
+        logger.info(f"Loaded config from: {args.config}")
+        if args.runs != 100:
+            logger.info(f"Overriding runs from config: runs={args.runs}")
+        if args.seed != 42:
+            logger.info(f"Overriding seed from config: seed={args.seed}")
     else:
-        # Build config from CLI arguments
-        full_config = FullConfig(
-            feature_config=FeatureConfig(),
-            model_config=ModelConfig(),
-            trade_config=TradeConfig(
-                initial_cash=args.initial_cash,
-                buy_threshold=0.55,
-                sell_threshold=0.45,
-                confirm_days=2,
-                min_hold_days=1,
-                exec_price_model=args.exec_price_model,
-                slippage_bps=args.slippage_bps,
-                commission_rate=args.commission_rate,
-                commission_min=args.commission_min,
-            ),
-        )
         logger.info("Using default/CLI config")
 
     # =========================================================
@@ -305,32 +349,64 @@ def main() -> None:
         else:
             print("[INFO] Loaded previous best_config as incumbent.")
 
-    trade_params = {
-        "initial_cash": float(args.initial_cash),
-        "buy_threshold": 0.55,
-        "sell_threshold": 0.45,
-        "confirm_days": 2,
-        "min_hold_days": 1,
-    }
+    # 从 effective_config 提取 trade_params，不再硬编码
+    trade_params = effective_config.trade_config.to_dict()
 
     # compute effective seed based on mode and latest run id
     latest_run_id = _get_latest_run_id(args.output_dir) if args.mode == "continue" else 0
     seed_effective = int(args.seed) + int(latest_run_id)
 
+    # 从 effective_config.search_config 提取随机搜索参数
+    search_cfg = effective_config.search_config
+    epsilon = search_cfg.epsilon
+    exploit_ratio = search_cfg.exploit_ratio
+    top_k = search_cfg.top_k
+    max_features = search_cfg.max_features
+    n_jobs = search_cfg.n_jobs
+
+    # 打印执行假设（Execution Assumptions）
+    print("\n" + "=" * 60)
+    print("Execution Assumptions (训练/验证/最终回测一致)")
+    print("=" * 60)
+    print(f"  Price Model:    {effective_config.trade_config.exec_price_model}")
+    print(f"  Slippage:       {effective_config.trade_config.slippage_bps:.1f} bps ({effective_config.trade_config.slippage_bps/10000:.2%})")
+    print(f"  Commission:     {effective_config.trade_config.commission_rate*100:.3f}% (min ¥{effective_config.trade_config.commission_min:.2f})")
+    print(f"  Transfer Fee:   0.001% (万分之 0.1)")
+    print(f"  Stamp Tax:      0.05% (千分之 0.5, 仅卖出)")
+    print(f"  Buy Threshold:  {effective_config.trade_config.buy_threshold:.2f}")
+    print(f"  Sell Threshold: {effective_config.trade_config.sell_threshold:.2f}")
+    print(f"  Confirm Days:   {effective_config.trade_config.confirm_days}")
+    print(f"  Min Hold Days:  {effective_config.trade_config.min_hold_days}")
+    print("=" * 60)
+    print("\nSearch Hyperparameters (from search_config)")
+    print("=" * 60)
+    print(f"  Runs:           {search_cfg.runs}")
+    print(f"  Epsilon:        {search_cfg.epsilon:.4f} (min improvement)")
+    print(f"  Exploit Ratio:  {search_cfg.exploit_ratio:.2f} ({int(search_cfg.runs * search_cfg.exploit_ratio)} exploit, {search_cfg.runs - int(search_cfg.runs * search_cfg.exploit_ratio)} explore)")
+    print(f"  Top-K:          {search_cfg.top_k}")
+    print(f"  Max Features:   {search_cfg.max_features}")
+    print(f"  N-Jobs:         {search_cfg.n_jobs} (-1=all cores, 1=single, >0=specified)")
+    print("=" * 60 + "\n")
+
     train_res = random_search_train(
         df_clean=df_clean,
         runs=int(args.runs),
         seed=int(seed_effective),
-        base_best_config=base_best_config,  # 保留也行，trainer会优先best_so_far
+        base_best_config=base_best_config,
         output_dir=str(args.output_dir),
-        epsilon=0.01,
-        exploit_ratio=0.7,
-        top_k=10,
+        epsilon=epsilon,
+        exploit_ratio=exploit_ratio,
+        top_k=top_k,
         trade_params=trade_params,
-        max_features=80,
-        n_jobs=6,
-        exec_price_model=args.exec_price_model,
-        slippage_bps=args.slippage_bps,
+        max_features=max_features,
+        n_jobs=n_jobs,
+        exec_price_model=effective_config.trade_config.exec_price_model,
+        slippage_bps=effective_config.trade_config.slippage_bps,
+        commission_rate=effective_config.trade_config.commission_rate,
+        commission_min=effective_config.trade_config.commission_min,
+        n_folds=effective_config.n_folds,
+        train_start_ratio=effective_config.train_start_ratio,
+        wf_min_rows=effective_config.wf_min_rows,
     )
 
     best_config = train_res.best_config
@@ -339,7 +415,7 @@ def main() -> None:
 
     dpoint, artifacts = train_final_model_and_dpoint(df_clean, best_config, seed=int(args.seed))
 
-    tc = best_config["trade_config"]  # 提取一次，避免重复索引
+    tc = best_config["trade_config"]
     bt = backtest_from_dpoint(
         df=df_clean,
         dpoint=dpoint,
@@ -348,13 +424,13 @@ def main() -> None:
         sell_threshold=float(tc["sell_threshold"]),
         confirm_days=int(tc["confirm_days"]),
         min_hold_days=int(tc["min_hold_days"]),
-        max_hold_days=int(tc.get("max_hold_days", 20)),    # ✅ 补全
-        take_profit=tc.get("take_profit", None),            # ✅ 补全
-        stop_loss=tc.get("stop_loss", None),                # ✅ 补全
-        exec_price_model=args.exec_price_model,
-        slippage_bps=args.slippage_bps,
-        commission_rate=args.commission_rate,
-        commission_min=args.commission_min,
+        max_hold_days=int(tc.get("max_hold_days", 20)),
+        take_profit=tc.get("take_profit", None),
+        stop_loss=tc.get("stop_loss", None),
+        exec_price_model=effective_config.trade_config.exec_price_model,
+        slippage_bps=effective_config.trade_config.slippage_bps,
+        commission_rate=effective_config.trade_config.commission_rate,
+        commission_min=effective_config.trade_config.commission_min,
     )
 
     final_equity = float(bt.equity_curve["total_equity"].iloc[-1]) if not bt.equity_curve.empty else float(args.initial_cash)
@@ -376,8 +452,9 @@ def main() -> None:
     log_notes.append("=== Training Summary / Improvement Confirmation ===")
     log_notes.append(f"Mode: {args.mode}")
     log_notes.append(f"Runs (search iterations): {args.runs}")
-    log_notes.append(f"Base seed (CLI): {args.seed}")
-    log_notes.append(f"Effective seed (base + latest_run_id): {seed_effective} (latest_run_id={latest_run_id})")
+    log_notes.append(f"Base seed (CLI --seed): {args.seed}")
+    log_notes.append(f"Search seed (base + latest_run_id={latest_run_id}): {seed_effective}")
+    log_notes.append(f"Final train seed (same as base): {args.seed}")
     log_notes.append(f"Best validation metric (geom-mean ratio): {train_res.best_val_metric:.6f}")
     log_notes.append(f"Best validation equity proxy (mean): {train_res.best_val_final_equity_proxy:.2f}")
     log_notes.append(f"Global best metric prev: {train_res.global_best_metric_prev:.6f}")
@@ -422,6 +499,13 @@ def main() -> None:
     if args.record_metadata:
         try:
             data_hash = compute_data_hash(df_clean)
+            # 使用 best_config（从训练中得到）作为复现配置
+            # best_config 已经包含了完整的 feature_config、model_config、trade_config
+            
+            # 明确记录三种种子语义：
+            # 1. base_seed: CLI 传入的基础种子（--seed）
+            # 2. search_seed: 实际用于随机搜索的种子（base_seed + latest_run_id，仅 continue 模式不同）
+            # 3. final_train_seed: 用于最终全样本模型训练的种子（始终 = base_seed）
             metadata = RunMetadata(
                 run_id=run_id,
                 created_at=datetime.now().isoformat(timespec="seconds"),
@@ -430,21 +514,24 @@ def main() -> None:
                 dependency_versions=get_dependency_versions(),
                 data_hash=data_hash,
                 data_path=args.data_path,
-                random_seed=args.seed,
+                random_seed=args.seed,  # base_seed，用于复现时的 CLI 参数
                 config=FullConfig.from_dict(best_config),
                 git_commit=get_git_commit(),
                 hostname=get_hostname(),
                 notes=[
                     f"Mode: {args.mode}",
                     f"Runs: {args.runs}",
-                    f"Effective seed: {seed_effective}",
+                    f"Base seed (CLI --seed): {args.seed}",
+                    f"Search seed (base + latest_run_id={latest_run_id}): {seed_effective}",
+                    f"Final train seed (same as base): {args.seed}",
+                    f"Effective config loaded from: {args.config if args.config else 'CLI/default'}",
                 ],
             )
-            
+
             # Save metadata JSON
             metadata_path = os.path.join(str(args.output_dir), f"run_{run_id:03d}_metadata.json")
             metadata.save_json(metadata_path)
-            
+
             logger.info(f"Saved metadata to: {metadata_path}")
         except Exception as e:
             logger.warning(f"Failed to save metadata: {e}")
@@ -454,7 +541,7 @@ def main() -> None:
     print(f"  - Config: {os.path.abspath(config_path)}")
     if args.record_metadata:
         print(f"  - Metadata: {os.path.abspath(metadata_path)}")
-    
+
     logger.info("Run completed successfully")
 
 

@@ -441,6 +441,7 @@ def _simulate_execution(
         # -----------------------------------------------------------
         # 阶段三：检查强制平仓条件
         # -----------------------------------------------------------
+        # 注意：止盈/止损基于收盘价判断（EOD-based），不是盘中价格
         force_sell = False
         force_reason = ""
 
@@ -457,16 +458,17 @@ def _simulate_execution(
             if open_trade is not None:
                 buy_price = float(open_trade.get("buy_price", np.nan))
                 if buy_price > 0:
+                    # EOD-based take-profit/stop-loss: use closing price
                     pnl_ratio = (price_close_t / buy_price) - 1.0
                     if take_profit is not None and pnl_ratio >= float(take_profit):
                         force_sell = True
                         force_reason = (
-                            f"take_profit reached ({pnl_ratio:.2%}>={take_profit:.2%}) -> FORCE_SELL"
+                            f"EOD take_profit reached ({pnl_ratio:.2%}>={take_profit:.2%}) -> FORCE_SELL"
                         )
                     if stop_loss is not None and pnl_ratio <= -float(stop_loss):
                         force_sell = True
                         force_reason = (
-                            f"stop_loss reached ({pnl_ratio:.2%}<={-stop_loss:.2%}) -> FORCE_SELL"
+                            f"EOD stop_loss reached ({pnl_ratio:.2%}<={-stop_loss:.2%}) -> FORCE_SELL"
                         )
 
         # -----------------------------------------------------------

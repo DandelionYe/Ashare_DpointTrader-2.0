@@ -1,36 +1,36 @@
 {
-  "saved_at": "2026-03-15T09:06:04.389809",
-  "best_metric": 1.434165877040881,
+  "saved_at": "2026-03-15T10:53:51.770605",
+  "best_metric": 1.3240850179983468,
   "best_config": {
     "feature_config": {
       "windows": [
-        9,
-        13,
-        18
+        4,
+        10,
+        36
       ],
-      "use_momentum": true,
+      "use_momentum": false,
       "use_volatility": true,
-      "use_volume": false,
+      "use_volume": true,
       "use_candle": false,
-      "use_turnover": false,
+      "use_turnover": true,
       "vol_metric": "std",
       "liq_transform": "zscore"
     },
     "model_config": {
       "model_type": "sgd",
-      "alpha": 0.0002970616853512178,
+      "alpha": 0.00017235477520255059,
       "penalty": "l1",
-      "class_weight": null
+      "class_weight": "balanced"
     },
     "trade_config": {
       "initial_cash": 100000.0,
-      "buy_threshold": 0.511540960789641,
-      "sell_threshold": 0.45496859813684976,
-      "confirm_days": 2,
-      "min_hold_days": 4,
-      "max_hold_days": 40,
-      "take_profit": 0.2029176934048185,
-      "stop_loss": 0.07215263065666896
+      "buy_threshold": 0.5868512314534284,
+      "sell_threshold": 0.434910273444383,
+      "confirm_days": 4,
+      "min_hold_days": 1,
+      "max_hold_days": 25,
+      "take_profit": 0.11374873771896099,
+      "stop_loss": null
     },
     "split_mode": "walkforward"
   }

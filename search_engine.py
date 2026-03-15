@@ -226,6 +226,10 @@ def _eval_candidate(
     feat_cache: Dict[str, Tuple[pd.DataFrame, pd.Series, FeatureMeta]],
     exec_price_model: str = "next_open",
     slippage_bps: float = 10.0,
+    commission_rate: float = 0.00025,
+    commission_min: float = 5.0,
+    transfer_fee_rate: float = 0.00001,
+    stamp_tax_rate: float = 0.0005,
 ) -> Tuple[float, float, Dict[str, object]]:
     """
     对单个候选配置做 walk-forward 回测，返回 (metric, equity_proxy, info)。
@@ -240,10 +244,14 @@ def _eval_candidate(
     Perf-03 早停剪枝：
         若某折净值低于 initial_cash * _EARLY_STOP_EQUITY_RATIO，
         直接返回 -inf，不再计算剩余折，节省后续模型训练和回测的开销。
-    
-    新增参数：
-        exec_price_model — 执行价模型（默认 "next_open"）
-        slippage_bps     — 滑点（基点），默认 10 bps
+
+    参数：
+        exec_price_model    — 执行价模型（默认 "next_open"）
+        slippage_bps        — 滑点（基点），默认 10 bps
+        commission_rate     — 佣金率，默认 0.00025（万分之 2.5）
+        commission_min      — 最低佣金，默认 5 元
+        transfer_fee_rate   — 过户费率，默认 0.00001（万分之 0.1）
+        stamp_tax_rate      — 印花税率，默认 0.0005（千分之 0.5，仅卖出）
     """
     feat_cfg = candidate["feature_config"]
     trade_cfg = candidate["trade_config"]
@@ -294,6 +302,10 @@ def _eval_candidate(
             df_clean, X_va, dp_val, trade_cfg,
             exec_price_model=exec_price_model,
             slippage_bps=slippage_bps,
+            commission_rate=commission_rate,
+            commission_min=commission_min,
+            transfer_fee_rate=transfer_fee_rate,
+            stamp_tax_rate=stamp_tax_rate,
         )
         eq_end = float(fold_stats["equity_end"])
         n_closed = int(fold_stats["n_closed"])
@@ -564,6 +576,10 @@ def random_search_train(
     n_jobs: int = -1,
     exec_price_model: str = "next_open",
     slippage_bps: float = 10.0,
+    commission_rate: float = 0.00025,
+    commission_min: float = 5.0,
+    transfer_fee_rate: float = 0.00001,
+    stamp_tax_rate: float = 0.0005,
 ) -> TrainResult:
     """
     持续优化系统（加速版）。
@@ -576,6 +592,10 @@ def random_search_train(
                            - "next_open": t 日信号，t+1 日执行，用 t+1 日开盘价（推荐，更真实）
                            - "next_close": t 日信号，t+1 日执行，用 t+1 日收盘价（保守）
         slippage_bps : 滑点（基点），默认 10 bps（0.1%）
+        commission_rate : 佣金率，默认 0.00025（万分之 2.5）
+        commission_min : 最低佣金，默认 5 元
+        transfer_fee_rate : 过户费率，默认 0.00001（万分之 0.1）
+        stamp_tax_rate : 印花税率，默认 0.0005（千分之 0.5，仅卖出）
 
     设计要点：
       - global best 持久化至 output/best_so_far.json（现任始终 = 全局最优）
@@ -679,6 +699,10 @@ def random_search_train(
         seed, inc_feat_cache,
         exec_price_model=exec_price_model,
         slippage_bps=slippage_bps,
+        commission_rate=commission_rate,
+        commission_min=commission_min,
+        transfer_fee_rate=transfer_fee_rate,
+        stamp_tax_rate=stamp_tax_rate,
     )
     best_metric = float(m_inc)
     best_equity_proxy = float(eq_inc)
@@ -732,6 +756,10 @@ def random_search_train(
             seed, local_cache,
             exec_price_model=exec_price_model,
             slippage_bps=slippage_bps,
+            commission_rate=commission_rate,
+            commission_min=commission_min,
+            transfer_fee_rate=transfer_fee_rate,
+            stamp_tax_rate=stamp_tax_rate,
         )
 
     raw_results: List[Tuple[float, float, Dict[str, object]]] = Parallel(

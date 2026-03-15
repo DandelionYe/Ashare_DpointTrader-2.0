@@ -190,6 +190,54 @@ class TradeConfig:
 
 
 # =========================================================
+# Search Config Schema
+# =========================================================
+@dataclass
+class SearchConfig:
+    """随机搜索超参数配置"""
+    runs: int = 100
+    epsilon: float = 0.01
+    exploit_ratio: float = 0.7
+    top_k: int = 10
+    max_features: int = 80
+    n_jobs: int = -1  # -1 = all cores, 1 = single thread, >0 = specified cores
+
+    def validate(self) -> List[str]:
+        """验证配置"""
+        errors = []
+        
+        if self.runs < 1:
+            errors.append("runs must be positive")
+        
+        if self.epsilon < 0:
+            errors.append("epsilon must be non-negative")
+        
+        if not (0 <= self.exploit_ratio <= 1):
+            errors.append("exploit_ratio must be in [0, 1]")
+        
+        if self.top_k < 1:
+            errors.append("top_k must be positive")
+        
+        if self.max_features < 1:
+            errors.append("max_features must be positive")
+        
+        # n_jobs: -1 = all cores, >=1 = specified cores
+        if self.n_jobs < -1 or self.n_jobs == 0:
+            errors.append("n_jobs must be -1 (all cores) or a positive integer")
+        
+        return errors
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> SearchConfig:
+        """从字典创建"""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+# =========================================================
 # Full Config Schema
 # =========================================================
 @dataclass
@@ -198,8 +246,9 @@ class FullConfig:
     feature_config: FeatureConfig = field(default_factory=FeatureConfig)
     model_config: ModelConfig = field(default_factory=ModelConfig)
     trade_config: TradeConfig = field(default_factory=TradeConfig)
+    search_config: SearchConfig = field(default_factory=SearchConfig)
     split_mode: Literal["walkforward"] = "walkforward"
-    
+
     # Walk-forward 参数
     n_folds: int = 4
     train_start_ratio: float = 0.5
@@ -211,16 +260,17 @@ class FullConfig:
         errors.extend(self.feature_config.validate())
         errors.extend(self.model_config.validate())
         errors.extend(self.trade_config.validate())
-        
+        errors.extend(self.search_config.validate())
+
         if self.n_folds < 2:
             errors.append("n_folds must be >= 2")
-        
+
         if not (0 < self.train_start_ratio < 1):
             errors.append("train_start_ratio must be in (0, 1)")
-        
+
         if self.wf_min_rows < 10:
             errors.append("wf_min_rows must be >= 10")
-        
+
         return errors
 
     def to_dict(self) -> Dict[str, Any]:
@@ -229,6 +279,7 @@ class FullConfig:
             "feature_config": self.feature_config.to_dict(),
             "model_config": self.model_config.to_dict(),
             "trade_config": self.trade_config.to_dict(),
+            "search_config": self.search_config.to_dict(),
             "split_mode": self.split_mode,
             "n_folds": self.n_folds,
             "train_start_ratio": self.train_start_ratio,
@@ -242,6 +293,7 @@ class FullConfig:
             feature_config=FeatureConfig.from_dict(data.get("feature_config", {})),
             model_config=ModelConfig.from_dict(data.get("model_config", {})),
             trade_config=TradeConfig.from_dict(data.get("trade_config", {})),
+            search_config=SearchConfig.from_dict(data.get("search_config", {})),
             split_mode=data.get("split_mode", "walkforward"),
             n_folds=data.get("n_folds", 4),
             train_start_ratio=data.get("train_start_ratio", 0.5),
@@ -271,6 +323,37 @@ class FullConfig:
         """保存到 JSON 文件"""
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=indent, ensure_ascii=False)
+
+    def apply_cli_overrides(
+        self,
+        runs: Optional[int] = None,
+        seed: Optional[int] = None,
+        initial_cash: Optional[float] = None,
+        exec_price_model: Optional[str] = None,
+        slippage_bps: Optional[float] = None,
+        commission_rate: Optional[float] = None,
+        commission_min: Optional[float] = None,
+    ) -> FullConfig:
+        """
+        应用 CLI 参数覆盖，返回新的 FullConfig 实例。
+        只有当 CLI 参数不是默认值时才覆盖。
+        """
+        # 深拷贝当前配置
+        new_config = FullConfig.from_dict(self.to_dict())
+
+        # 覆盖 TradeConfig 中的执行参数
+        if exec_price_model is not None:
+            new_config.trade_config.exec_price_model = exec_price_model  # type: ignore
+        if slippage_bps is not None:
+            new_config.trade_config.slippage_bps = slippage_bps  # type: ignore
+        if commission_rate is not None:
+            new_config.trade_config.commission_rate = commission_rate  # type: ignore
+        if commission_min is not None:
+            new_config.trade_config.commission_min = commission_min  # type: ignore
+        if initial_cash is not None:
+            new_config.trade_config.initial_cash = initial_cash  # type: ignore
+
+        return new_config
 
 
 # =========================================================

@@ -1,74 +1,75 @@
 {
   "run_id": 2,
-  "created_at": "2026-03-15T09:02:40",
+  "created_at": "2026-03-15T10:51:32",
   "data_hash": "1cb8c800de788853bb0dbf8d29a25b5f20aacc10a4ef0dfa4a77aceb0dfd5b0e",
   "best_config": {
     "feature_config": {
       "windows": [
-        5,
-        10,
-        13,
-        20
+        4,
+        9,
+        36
       ],
-      "use_momentum": true,
+      "use_momentum": false,
       "use_volatility": true,
-      "use_volume": false,
+      "use_volume": true,
       "use_candle": true,
-      "use_turnover": false,
+      "use_turnover": true,
       "vol_metric": "std",
       "liq_transform": "zscore"
     },
     "model_config": {
       "model_type": "sgd",
-      "alpha": 0.0007426542133780444,
+      "alpha": 0.00034470955040510117,
       "penalty": "l1",
       "class_weight": "balanced"
     },
     "trade_config": {
       "initial_cash": 100000.0,
-      "buy_threshold": 0.5043712916445824,
-      "sell_threshold": 0.4543712916445824,
-      "confirm_days": 3,
-      "min_hold_days": 2,
-      "max_hold_days": 50,
-      "take_profit": 0.1643658881085906,
-      "stop_loss": 0.06461826192222651
+      "buy_threshold": 0.6059895896136763,
+      "sell_threshold": 0.4370398827872921,
+      "confirm_days": 4,
+      "min_hold_days": 1,
+      "max_hold_days": 25,
+      "take_profit": 0.08884200805767085,
+      "stop_loss": null
     },
     "split_mode": "walkforward"
   },
   "feature_meta": {
     "feature_names": [
       "ret_1",
-      "ret_5",
-      "ma_5_ratio",
-      "ret_10",
-      "ma_10_ratio",
-      "ret_13",
-      "ma_13_ratio",
-      "ret_20",
-      "ma_20_ratio",
       "hl_range",
       "true_range_norm",
-      "vol_std_5",
-      "vol_std_10",
-      "vol_std_13",
-      "vol_std_20",
+      "vol_std_4",
+      "vol_std_9",
+      "vol_std_36",
+      "log_volume",
+      "log_amount",
+      "volume_z_4",
+      "amount_z_4",
+      "volume_z_9",
+      "amount_z_9",
+      "volume_z_36",
+      "amount_z_36",
+      "turnover",
+      "turnover_z_4",
+      "turnover_z_9",
+      "turnover_z_36",
       "body",
       "upper_shadow",
       "lower_shadow"
     ],
     "feature_params": {
       "windows": [
-        5,
-        10,
-        13,
-        20
+        4,
+        9,
+        36
       ],
-      "use_momentum": true,
+      "use_momentum": false,
       "use_volatility": true,
-      "use_volume": false,
+      "use_volume": true,
       "use_candle": true,
-      "use_turnover": false,
+      "use_turnover": true,
       "vol_metric": "std",
       "liq_transform": "zscore"
     },

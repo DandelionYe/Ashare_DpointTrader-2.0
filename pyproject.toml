@@ -56,18 +56,34 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/Ashare_DpointTrader"
-Documentation = "https://github.com/yourusername/Ashare_DpointTrader#readme"
-Repository = "https://github.com/yourusername/Ashare_DpointTrader.git"
-Issues = "https://github.com/yourusername/Ashare_DpointTrader/issues"
+Homepage = "https://github.com/Ashare_DpointTrader-2.0"
+Documentation = "https://github.com/Ashare_DpointTrader-2.0#readme"
+Repository = "https://github.com/Ashare_DpointTrader-2.0.git"
+Issues = "https://github.com/Ashare_DpointTrader-2.0/issues"
 
 [project.scripts]
 dpoint-trader = "main_cli:main"
+ashare-dpoint-trader = "main_cli:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["*.py"]
-exclude = ["tests*", "test_*"]
+[tool.setuptools]
+# For a flat structure, we list modules explicitly
+py-modules = [
+    "main_cli",
+    "data_loader",
+    "feature_dpoint",
+    "model_builder",
+    "splitter",
+    "metrics",
+    "search_engine",
+    "trainer_optimizer",
+    "backtester_engine",
+    "reporter",
+    "persistence",
+    "constants",
+    "config_schema",
+    "structured_logging",
+    "setup_check",
+]
 
 [tool.setuptools.package-data]
 "*" = ["data/*.xlsx"]

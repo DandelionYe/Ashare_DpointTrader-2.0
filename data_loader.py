@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Literal
 
 import pandas as pd
 
@@ -18,6 +18,12 @@ REQUIRED_COLS: list[str] = [
     "turnover_rate",
 ]
 
+# Non-core columns that may have missing values
+NON_CORE_COLS: list[str] = ["volume", "amount", "turnover_rate"]
+
+# Missing value handling strategies
+MissingStrategy = Literal["zero", "ffill", "drop", "keep_nan"]
+
 
 @dataclass
 class DataReport:
@@ -28,18 +34,33 @@ class DataReport:
     bad_ohlc_rows: int
     sheet_used: str
     notes: List[str]
+    # Missing value statistics
+    volume_missing_count: int = 0
+    amount_missing_count: int = 0
+    turnover_rate_missing_count: int = 0
 
 
 def load_stock_excel(
     excel_path: str,
     sheet_name: Optional[str] = None,
     strict_columns: bool = True,
+    missing_strategy: MissingStrategy = "zero",
 ) -> Tuple[pd.DataFrame, DataReport]:
     """
     Load and clean A-share daily data from Excel.
 
     Expected columns:
         date, open_qfq, high_qfq, low_qfq, close_qfq, volume, amount, turnover_rate
+
+    Parameters:
+        excel_path      : Path to Excel file
+        sheet_name      : Sheet name to use (None = first sheet)
+        strict_columns  : Raise error if required columns missing
+        missing_strategy: How to handle missing non-core values:
+                          - "zero": Fill with 0 and add _was_missing marker columns
+                          - "ffill": Forward fill from previous day
+                          - "drop": Drop rows with missing values
+                          - "keep_nan": Keep as NaN (features will handle)
     """
     notes: List[str] = []
     df_obj = pd.read_excel(excel_path, sheet_name=sheet_name)
@@ -99,12 +120,45 @@ def load_stock_excel(
     if rows_after_dropna_core < rows_before:
         notes.append(f"Dropped rows with NaN core OHLC: {rows_before - rows_after_dropna_core}")
 
-    # Fill missing non-core fields with 0
-    for c in ["volume", "amount", "turnover_rate"]:
-        n_missing = int(df[c].isna().sum())
+    # Handle missing non-core fields based on strategy
+    # Add _was_missing marker columns to distinguish "true 0" from "filled 0"
+    volume_missing_count = 0
+    amount_missing_count = 0
+    turnover_rate_missing_count = 0
+
+    for c in NON_CORE_COLS:
+        if c not in df.columns:
+            continue
+        missing_mask = df[c].isna()
+        n_missing = int(missing_mask.sum())
+
         if n_missing > 0:
-            notes.append(f"Filled missing {c} with 0: {n_missing}")
-            df[c] = df[c].fillna(0.0)
+            # Record missing count
+            if c == "volume":
+                volume_missing_count = n_missing
+            elif c == "amount":
+                amount_missing_count = n_missing
+            elif c == "turnover_rate":
+                turnover_rate_missing_count = n_missing
+
+            # Add marker column
+            marker_col = f"{c}_was_missing"
+            df[marker_col] = missing_mask
+
+            # Apply strategy
+            if missing_strategy == "zero":
+                df[c] = df[c].fillna(0.0)
+                notes.append(f"Filled missing {c} with 0: {n_missing} (marker: {marker_col})")
+            elif missing_strategy == "ffill":
+                df[c] = df[c].ffill()
+                notes.append(f"Forward-filled missing {c}: {n_missing} (marker: {marker_col})")
+            elif missing_strategy == "drop":
+                df = df[~missing_mask].copy()
+                notes.append(f"Dropped rows with missing {c}: {n_missing}")
+            elif missing_strategy == "keep_nan":
+                notes.append(f"Kept NaN for {c}: {n_missing} (marker: {marker_col})")
+            else:
+                raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
     # Validity filters
     bad_price = int(
@@ -143,5 +197,8 @@ def load_stock_excel(
         bad_ohlc_rows=bad_ohlc_rows,
         sheet_used=sheet_used,
         notes=notes,
+        volume_missing_count=volume_missing_count,
+        amount_missing_count=amount_missing_count,
+        turnover_rate_missing_count=turnover_rate_missing_count,
     )
     return df, report

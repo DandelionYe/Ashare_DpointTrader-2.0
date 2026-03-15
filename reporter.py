@@ -81,6 +81,38 @@ def find_latest_run(output_dir: str) -> Optional[Tuple[int, str, str]]:
     return sorted(candidates, key=lambda x: x[0])[-1]
 
 
+def _build_execution_assumptions(config: Dict[str, object]) -> pd.DataFrame:
+    """
+    构建执行假设说明页，展示交易成本、滑点、执行价模型等参数。
+    """
+    trade_cfg = config.get("trade_config", {})
+    
+    rows = [
+        {"Parameter": "=== Execution Price Model ===", "Value": "", "Description": ""},
+        {"Parameter": "exec_price_model", "Value": str(trade_cfg.get("exec_price_model", "N/A")), "Description": "Price used for order execution"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Slippage ===", "Value": "", "Description": ""},
+        {"Parameter": "slippage_bps", "Value": f"{trade_cfg.get('slippage_bps', 0):.1f} bps", "Description": f"({trade_cfg.get('slippage_bps', 0)/10000:.2%})"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Transaction Costs ===", "Value": "", "Description": ""},
+        {"Parameter": "commission_rate", "Value": f"{trade_cfg.get('commission_rate', 0)*100:.3f}%", "Description": "Commission rate (both sides)"},
+        {"Parameter": "commission_min", "Value": f"¥{trade_cfg.get('commission_min', 0):.2f}", "Description": "Minimum commission"},
+        {"Parameter": "transfer_fee_rate", "Value": "0.001%", "Description": "Transfer fee (both sides, 万分之 0.1)"},
+        {"Parameter": "stamp_tax_rate", "Value": "0.05%", "Description": "Stamp tax (sell only, 千分之 0.5)"},
+        {"Parameter": "", "Value": "", "Description": ""},
+        {"Parameter": "=== Trading Rules ===", "Value": "", "Description": ""},
+        {"Parameter": "buy_threshold", "Value": f"{trade_cfg.get('buy_threshold', 0):.2f}", "Description": "Dpoint threshold for buy signal"},
+        {"Parameter": "sell_threshold", "Value": f"{trade_cfg.get('sell_threshold', 0):.2f}", "Description": "Dpoint threshold for sell signal"},
+        {"Parameter": "confirm_days", "Value": str(trade_cfg.get("confirm_days", 0)), "Description": "Days to confirm signal"},
+        {"Parameter": "min_hold_days", "Value": str(trade_cfg.get("min_hold_days", 0)), "Description": "Minimum holding period"},
+        {"Parameter": "max_hold_days", "Value": str(trade_cfg.get("max_hold_days", 20)), "Description": "Maximum holding period"},
+        {"Parameter": "take_profit", "Value": str(trade_cfg.get("take_profit", "None")), "Description": "Take-profit threshold (EOD-based)"},
+        {"Parameter": "stop_loss", "Value": str(trade_cfg.get("stop_loss", "None")), "Description": "Stop-loss threshold (EOD-based)"},
+    ]
+    
+    return pd.DataFrame(rows)
+
+
 def _build_walkforward_summary(search_log: pd.DataFrame, config: Dict[str, object]) -> pd.DataFrame:
     """
     从 search_log 中提取 Walk-Forward 验证的样本外指标摘要。
@@ -262,6 +294,10 @@ def save_run_outputs(
     walkforward_summary = _build_walkforward_summary(search_log, config)
     walkforward_summary_safe = escape_excel_formulas(walkforward_summary)
 
+    # 1.5 ExecutionAssumptions: 执行假设说明（新增）
+    execution_assumptions = _build_execution_assumptions(config)
+    execution_assumptions_safe = escape_excel_formulas(execution_assumptions)
+
     # 2. FinalFit_InSample: 样本内结果警告页
     insample_warning = _build_insample_warning_sheet()
     insample_warning_safe = escape_excel_formulas(insample_warning)
@@ -319,6 +355,9 @@ def save_run_outputs(
     with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
         # 第一优先级：样本外验证结果
         walkforward_summary_safe.to_excel(writer, sheet_name="WalkForwardSummary", index=False)
+
+        # 执行假设说明（新增）
+        execution_assumptions_safe.to_excel(writer, sheet_name="ExecutionAssumptions", index=False)
 
         # 交易记录
         trades_safe.to_excel(writer, sheet_name="Trades", index=False)

@@ -40,13 +40,21 @@ def backtest_fold_stats(
     trade_cfg: Dict[str, object],
     exec_price_model: str = "next_open",
     slippage_bps: float = 10.0,
+    commission_rate: float = 0.00025,
+    commission_min: float = 5.0,
+    transfer_fee_rate: float = 0.00001,
+    stamp_tax_rate: float = 0.0005,
 ) -> Dict[str, float]:
     """
     对单个验证折运行回测，返回关键统计量。
 
     参数:
-        exec_price_model — 执行价模型（默认 "next_open"）
-        slippage_bps     — 滑点（基点），默认 10 bps
+        exec_price_model    — 执行价模型（默认 "next_open"）
+        slippage_bps        — 滑点（基点），默认 10 bps
+        commission_rate     — 佣金率，默认 0.00025（万分之 2.5）
+        commission_min      — 最低佣金，默认 5 元
+        transfer_fee_rate   — 过户费率，默认 0.00001（万分之 0.1）
+        stamp_tax_rate      — 印花税率，默认 0.0005（千分之 0.5，仅卖出）
 
     返回字段:
         equity_end  — 验证期末净值
@@ -70,6 +78,10 @@ def backtest_fold_stats(
         stop_loss=trade_cfg.get("stop_loss", None),
         exec_price_model=exec_price_model,
         slippage_bps=slippage_bps,
+        commission_rate=commission_rate,
+        commission_min=commission_min,
+        transfer_fee_rate=transfer_fee_rate,
+        stamp_tax_rate=stamp_tax_rate,
     )
 
     equity_end = (

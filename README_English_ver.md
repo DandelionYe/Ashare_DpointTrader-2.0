@@ -3,20 +3,21 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**A-Share Single-Stock Machine Learning Trading Strategy System**
+**A-Share Single-Stock ML Trading Strategy System**
 
-A quantitative trading backtesting framework based on machine learning to predict next-day price movement probability (Dpoint), combined with walk-forward validation and random search hyperparameter optimization.
+A quantitative trading backtesting framework based on machine learning prediction of next-day price movement (Dpoint), combined with walk-forward validation and random search hyperparameter optimization.
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
-- [Configuration](#-configuration)
+- [Configuration Schema](#-configuration-schema)
+- [CLI Parameters](#-cli-parameters)
 - [Realistic Execution](#-realistic-execution)
 - [Output Files](#-output-files)
 - [Project Structure](#-project-structure)
@@ -34,8 +35,8 @@ A quantitative trading backtesting framework based on machine learning to predic
 
 ```bash
 # 1. Clone project
-git clone <your-repo-url>
-cd "Ashare_DpointTrader 2.0"
+git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+cd Ashare_DpointTrader-2.0
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -52,11 +53,31 @@ python main_cli.py
 # - run_001_metadata.json # Full metadata (for reproduction)
 ```
 
+### Windows Virtual Environment (Optional)
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# PowerShell:
+.\venv\Scripts\Activate.ps1
+# CMD:
+.\venv\Scripts\activate.bat
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run
+python main_cli.py
+```
+
 ### Opening Excel Report
 
 1. **First check** `WalkForwardSummary` sheet (Out-of-sample metrics - PRIMARY KPIs)
-2. **Then check** `Trades` sheet (Trade records)
-3. `EquityCurve` sheet is for reference only (In-sample results)
+2. **Check** `ExecutionAssumptions` sheet (Execution assumptions)
+3. **Then check** `Trades` sheet (Trade records)
+4. `EquityCurve` sheet is for reference only (In-sample results)
 
 ---
 
@@ -80,6 +101,7 @@ python main_cli.py
 - **Continuous Learning**: Supports `continue` mode to optimize based on historical best configurations
 - **Structured Logging**: JSON format logs with performance tracking
 - **Full Metadata Recording**: Records code version, dependency versions, git commit for exact reproduction
+- **Configuration Schema**: Strict configuration structure using Pydantic, supports validation and serialization
 
 ---
 
@@ -115,16 +137,20 @@ xgboost>=1.5.0         # XGBoost model (GPU acceleration)
 ### 1. Clone or Download Project
 
 ```bash
-git clone <your-repo-url>
-cd "Ashare_DpointTrader 2.0"
+git clone https://github.com/Ashare_DpointTrader-2.0/Ashare_DpointTrader-2.0.git
+cd Ashare_DpointTrader-2.0
 ```
 
 ### 2. Create Virtual Environment (Recommended)
 
 ```bash
-# Windows
+# Windows (PowerShell)
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
+
+# Windows (CMD)
+python -m venv venv
+.\venv\Scripts\activate.bat
 
 # Linux/macOS
 python3 -m venv venv
@@ -147,17 +173,17 @@ pip install .
 ```bash
 pip install pandas numpy scikit-learn openpyxl xlsxwriter joblib
 
-# Optional: Install XGBoost (for GPU acceleration)
+# Optional: Install XGBoost (GPU acceleration)
 pip install xgboost
 ```
 
 ### 4. Verify Installation
 
 ```bash
-# Quick verification (check dependencies and data file)
+# Quick verification (check dependencies and data files)
 python main_cli.py --help
 
-# Or run startup checks (without backtest)
+# Or run startup checks (without backtesting)
 python setup_check.py
 ```
 
@@ -165,9 +191,9 @@ python setup_check.py
 
 ## 🎯 Usage
 
-### Run with Default Sample Data
+### Default Run (Using Sample Data)
 
-The project includes a sample data file `data/600698_5Y_daily_qfq_20210302_20260302.xlsx`, you can run directly:
+Project includes sample data file `data/600698_5Y_daily_qfq_20210302_20260302.xlsx`, can run directly:
 
 ```bash
 python main_cli.py
@@ -188,30 +214,95 @@ python main_cli.py --mode continue --runs 500
 # Use your own data file
 python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
 
-# Realistic execution mode - Use open price + costs + slippage (recommended)
+# Realistic execution mode - Use open price + transaction costs + slippage (recommended)
 python main_cli.py --mode first --runs 100 --exec_price_model next_open --slippage_bps 10
 
 # Reproduce previous run
 python main_cli.py --config output/run_001_metadata.json
+
+# Disable metadata recording
+python main_cli.py --no-record-metadata
 ```
 
-### Command Line Arguments
+---
 
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `--mode` | `first` / `continue` | `first` | Run mode. `first` starts from scratch, `continue` continues based on historical best |
-| `--data_path` | String | Built-in default path | Excel data file path |
+## 🧬 Configuration Schema
+
+Configuration is managed through `FullConfig`, containing the following sub-configurations:
+
+### 1. FeatureConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `windows` | Integer list | `[3, 5, 10, 20]` | Rolling window sizes |
+| `use_momentum` | Boolean | `True` | Use momentum features |
+| `use_volatility` | Boolean | `True` | Use volatility features |
+| `use_volume` | Boolean | `True` | Use volume features |
+| `use_candle` | Boolean | `True` | Use candlestick pattern features |
+| `use_turnover` | Boolean | `True` | Use turnover rate features |
+| `vol_metric` | `std`/`mad` | `std` | Volatility calculation method |
+| `liq_transform` | `ratio`/`zscore` | `ratio` | Liquidity transformation method |
+
+### 2. ModelConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `model_type` | `logreg`/`sgd`/`xgb` | `logreg` | Model type |
+| `C` | Float | `1.0` | Logistic regression regularization strength |
+| `penalty` | `l1`/`l2`/`elasticnet` | `l2` | Regularization type |
+| `solver` | String | `lbfgs` | Optimization algorithm |
+| `alpha` | Float | `1e-4` | SGD regularization strength |
+| `n_estimators` | Integer | `100` | XGBoost tree count |
+| `max_depth` | Integer | `3` | XGBoost tree max depth |
+| `learning_rate` | Float | `0.1` | XGBoost learning rate |
+
+### 3. TradeConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `initial_cash` | Float | `100000` | Initial capital (CNY) |
+| `buy_threshold` | Float | `0.55` | Buy Dpoint threshold |
+| `sell_threshold` | Float | `0.45` | Sell Dpoint threshold |
+| `confirm_days` | Integer | `2` | Signal confirmation days |
+| `min_hold_days` | Integer | `1` | Minimum holding days |
+| `max_hold_days` | Integer | `20` | Maximum holding days |
+| `take_profit` | Float | `None` | Take-profit threshold (EOD-based) |
+| `stop_loss` | Float | `None` | Stop-loss threshold (EOD-based) |
+| `exec_price_model` | String | `next_open` | Execution price model |
+| `slippage_bps` | Float | `10.0` | Slippage (basis points) |
+| `commission_rate` | Float | `0.00025` | Commission rate |
+| `commission_min` | Float | `5.0` | Minimum commission |
+
+### 4. SearchConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `runs` | Integer | `100` | Random search iterations |
+| `epsilon` | Float | `0.01` | Minimum improvement threshold |
+| `exploit_ratio` | Float | `0.7` | Local exploitation ratio (70% exploit, 30% explore) |
+| `top_k` | Integer | `10` | Top-K pool size |
+| `max_features` | Integer | `80` | Maximum features |
+| `n_jobs` | Integer | `-1` | Parallel processes (-1=all cores, 1=single thread) |
+
+---
+
+## 🔧 CLI Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `--mode` | `first` / `continue` | `first` | Run mode |
+| `--data_path` | String | Built-in default | Excel data file path |
 | `--output_dir` | String | `./output` | Output directory |
-| `--runs` | Integer | `100` | Random search iterations (recommended: 100/500/1000/5000) |
-| `--seed` | Integer | `42` | Random seed for reproducibility |
+| `--runs` | Integer | `100` | Random search iterations |
+| `--seed` | Integer | `42` | Random seed (base seed) |
 | `--initial_cash` | Float | `100000` | Initial capital (CNY) |
-| `--exec_price_model` | String | `next_open` | Execution price model: `same_close_idealized`, `next_open`, `next_close` |
-| `--slippage_bps` | Float | `10.0` | Slippage in basis points, default 10 bps (0.1%) |
-| `--commission_rate` | Float | `0.00025` | Commission rate, default 0.025% |
-| `--commission_min` | Float | `5.0` | Minimum commission, default 5 CNY |
-| `--config` | String | `None` | Load configuration from file (for reproduction) |
-| `--record_metadata` | Boolean | `True` | Record full metadata (default: enabled) |
-| `--log_dir` | String | `./logs` | Structured logging directory |
+| `--exec_price_model` | String | `next_open` | Execution price model |
+| `--slippage_bps` | Float | `10.0` | Slippage (basis points) |
+| `--commission_rate` | Float | `0.00025` | Commission rate |
+| `--commission_min` | Float | `5.0` | Minimum commission |
+| `--config` | String | `None` | Load from config file (for reproduction) |
+| `--record-metadata` | Boolean | `True` | Record metadata (use `--no-record-metadata` to disable) |
+| `--log_dir` | String | `./logs` | Log directory |
 
 ### Run Modes
 
@@ -224,7 +315,26 @@ python main_cli.py --config output/run_001_metadata.json
 - Continues optimization based on it
 - Suitable for iterative strategy improvement
 
-### Data File Format
+### Random Seed Semantics
+
+The system uses three seeds to ensure reproducibility:
+
+| Seed Name | Description | Calculation |
+|-----------|-------------|-------------|
+| **Base Seed** | CLI input base seed (`--seed`) | User specified, default 42 |
+| **Search Seed** | Actual seed for random search | `base_seed + latest_run_id` |
+| **Final Train Seed** | Seed for final full-sample model training | Always equals `base_seed` |
+
+**Reproduction Strategy**:
+- **First run (first mode)**: All three seeds are the same
+- **Continue run (continue mode)**: Search Seed = Base Seed + previous run_id
+- **Exact reproduction**: Use `--config run_XXX_metadata.json` with the same `--seed` value
+
+---
+
+## 📊 Data Files
+
+### File Format
 
 Excel file must contain the following columns:
 
@@ -239,44 +349,22 @@ Excel file must contain the following columns:
 | `amount` | Trading amount | `11000000` |
 | `turnover_rate` | Turnover rate | `2.5` |
 
-> **Tip**: Data can be obtained from Tushare, Baostock, JoinQuant, etc. Export to Excel format.
+> 💡 **Tip**: Data can be obtained from Tushare, Baostock, JoinQuant, etc. Export to Excel format.
 
----
+### Missing Value Handling
 
-## ⚙️ Configuration
+For non-core columns (`volume`, `amount`, `turnover_rate`), the system provides the following handling strategies:
 
-### Feature Configuration (Auto-Search)
+| Strategy | Description | Marker Columns |
+|----------|-------------|----------------|
+| `zero` (default) | Fill with 0, add `_was_missing` marker columns | `volume_was_missing`, etc. |
+| `ffill` | Forward fill from previous day | `volume_was_missing`, etc. |
+| `drop` | Drop rows with missing values | - |
+| `keep_nan` | Keep as NaN, handled by feature engineering | `volume_was_missing`, etc. |
 
-| Parameter | Description | Search Range |
-|-----------|-------------|--------------|
-| `windows` | Time windows | `[3,5,10,20]`, `[5,10,20,60]`, etc. |
-| `use_momentum` | Momentum features | `True` / `False` |
-| `use_volatility` | Volatility features | `True` / `False` |
-| `use_volume` | Volume features | `True` / `False` |
-| `use_candle` | Candlestick pattern features | `True` / `False` |
-| `use_turnover` | Turnover rate features | `True` / `False` |
-| `vol_metric` | Volatility metric | `std` / `mad` |
-| `liq_transform` | Liquidity transformation | `ratio` / `zscore` |
-
-### Model Configuration (Auto-Search)
-
-| Model Type | Search Parameters |
-|------------|-------------------|
-| **Logistic Regression** | penalty (l1/l2/elasticnet), solver, C, class_weight, l1_ratio |
-| **SGD Classifier** | alpha, penalty, class_weight, l1_ratio |
-| **XGBoost** | n_estimators, max_depth, learning_rate, subsample, colsample_bytree |
-
-### Trading Configuration (Auto-Search)
-
-| Parameter | Description | Search Range |
-|-----------|-------------|--------------|
-| `buy_threshold` | Buy probability threshold | `0.50` ~ `0.70` |
-| `sell_threshold` | Sell probability threshold | `0.30` ~ `0.50` |
-| `confirm_days` | Signal confirmation days | `1` ~ `5` |
-| `min_hold_days` | Minimum holding days | `1` ~ `5` |
-| `max_hold_days` | Maximum holding days | `10` ~ `60` |
-| `take_profit` | Take-profit threshold (optional) | `0.05` ~ `0.20` |
-| `stop_loss` | Stop-loss threshold (optional) | `0.05` ~ `0.15` |
+**Default Strategy Notes**:
+- When filling with 0, boolean marker columns (`volume_was_missing`, `amount_was_missing`, `turnover_rate_was_missing`) are added
+- These markers distinguish "true 0 volume" from "missing data filled with 0"
 
 ---
 
@@ -299,66 +387,40 @@ Version 2.0 introduces a **realistic execution model** that accounts for:
 
 | Fee Type | Rate | Direction | Minimum |
 |----------|------|-----------|---------|
-| **Commission** | 0.025% (2.5‱) | Buy & Sell | 5 CNY |
-| **Transfer Fee** | 0.001% (0.1‱) | Buy & Sell | - |
+| **Commission** | 0.025% (2.5‱) | Both sides | 5 CNY |
+| **Transfer Fee** | 0.001% (0.1‱) | Both sides | - |
 | **Stamp Tax** | 0.05% (5‱) | Sell only | - |
-
-**Calculation Example:**
-
-Buy 100 shares @ 10 CNY:
-- Turnover: 100 × 10 = 1,000 CNY
-- Commission: max(1,000 × 0.025%, 5) = 5 CNY
-- Transfer fee: 1,000 × 0.001% = 0.01 CNY
-- **Total cost**: 5.01 CNY
-
-Sell 100 shares @ 10 CNY:
-- Turnover: 100 × 10 = 1,000 CNY
-- Commission: max(1,000 × 0.025%, 5) = 5 CNY
-- Transfer fee: 1,000 × 0.001% = 0.01 CNY
-- Stamp tax: 1,000 × 0.05% = 0.5 CNY
-- **Total cost**: 5.51 CNY
 
 ### Slippage Model
 
-Slippage is applied as a fixed basis points (bps) adjustment:
-
-- **Buy**: Execution price = Base price × (1 + slippage_bps / 10000)
-- **Sell**: Execution price = Base price × (1 - slippage_bps / 10000)
+Slippage adjusts by fixed basis points (bps):
+- **Buy**: Execution Price = Base Price × (1 + slippage_bps / 10000)
+- **Sell**: Execution Price = Base Price × (1 - slippage_bps / 10000)
 
 **Default**: 10 bps (0.1%)
 
-**Example**:
-- Base price: 10.00 CNY
-- Slippage: 10 bps
-- Buy execution: 10.00 × 1.001 = **10.01 CNY**
-- Sell execution: 10.00 × 0.999 = **9.99 CNY**
+### Take-Profit/Stop-Loss Trigger Mechanism
 
-### Expected Impact
-
-When switching from `same_close_idealized` to `next_open + fee + slippage`:
-
-| Component | Typical Impact |
-|-----------|----------------|
-| Overnight gap (close→open) | -0.5% ~ -2% per trade |
-| Slippage (10 bps) | -0.1% per trade |
-| Transaction costs | -0.5% ~ -1% per round trip |
-| **Total** | **-1% ~ -3% per trade** |
-
-**High-frequency strategies** (many trades per year) will see a larger cumulative impact.
+The system uses **EOD-based (End-of-Day)** mechanism:
+- After market close, calculates PnL ratio using closing price
+- If `pnl_ratio >= take_profit`, triggers take-profit, executes sell next day
+- If `pnl_ratio <= -stop_loss`, triggers stop-loss, executes sell next day
+- Does **NOT** use intraday high/low for trigger
 
 ---
 
-## 📊 Output Files
+## 📁 Output Files
 
-After running, the `output/` directory will generate the following files:
+After running, the `output/` directory will contain:
 
 ### run_XXX.xlsx - Backtest Report
 
-**Important: Sheets are listed in order of importance. Check [WalkForwardSummary] first.**
+**Important: Sheets are sorted by priority. First check [WalkForwardSummary].**
 
 | Sheet Name | Content | Priority |
 |------------|---------|----------|
 | `WalkForwardSummary` | **Walk-Forward Out-of-Sample Validation Metrics** (Key KPIs) | ⭐⭐⭐⭐⭐ |
+| `ExecutionAssumptions` | **Execution Assumptions** (price model, slippage, costs, rules) | ⭐⭐⭐⭐⭐ |
 | `Trades` | Trade records (buy/sell dates, prices, returns, costs, slippage, etc.) | ⭐⭐⭐⭐ |
 | `EquityCurve` | Equity curve (date, equity, position, drawdown, signals, etc.) | ⭐⭐⭐ |
 | `FinalFit_InSample` | **In-Sample Result Warning** (For reference only, not out-of-sample performance) | ⚠️ |
@@ -367,58 +429,26 @@ After running, the `output/` directory will generate the following files:
 | `ModelParams` | Model parameters (feature coefficients, scaler params, intercept) | ⭐⭐ |
 | `Log` | Run logs and diagnostic information | ⭐⭐ |
 
-### Why is [WalkForwardSummary] Most Important?
-
-- **Out-of-Sample Validation**: Each Walk-Forward fold uses unseen data, reflecting real expected performance
-- **No Information Leakage**: Training and validation sets are strictly separated, avoiding look-ahead bias
-- **Robustness Assessment**: Multi-fold validation evaluates strategy stability across different market conditions
-
-### ⚠️ Why is [EquityCurve] For Reference Only?
-
-`EquityCurve` shows the **Full-Sample Fit Result** (In-Sample):
-- Model is trained and predicted on the same data (information leakage)
-- Does not account for overnight gaps, slippage, and fill deviation (unless using realistic execution)
-- Results are overly optimistic and **do not represent future live trading performance**
-
-**For real out-of-sample performance, check the metrics in [WalkForwardSummary] and [SearchLog] sheets.**
-
 ### run_XXX_config.json - Configuration File
 
-Contains all parameters of the best configuration, used for:
-- Reproducing run results
-- `continue` mode loading
-- Strategy parameter archiving
+JSON file containing the best configuration and feature metadata, can be used for `--config` parameter in subsequent runs.
 
-### run_XXX_metadata.json - Full Metadata (NEW)
+### run_XXX_metadata.json - Metadata File
 
-Contains complete run metadata:
+Contains complete run metadata for exact reproduction:
 - Code version (git commit)
 - Python version
 - All dependency versions
 - Data file hash
-- Random seed
+- Random seed (base seed)
 - Hostname and timestamp
-
-Used for **exact reproduction**.
-
-### Key Metrics Explanation
-
-| Metric | Description |
-|--------|-------------|
-| `geom_mean_ratio` | Geometric mean return rate (main optimization target) |
-| `total_return` | Total return |
-| `max_drawdown` | Maximum drawdown |
-| `win_rate` | Win rate |
-| `profit_factor` | Profit factor |
-| `sharpe_ratio` | Sharpe ratio (annualized) |
-| `trade_count` | Number of trades |
 
 ---
 
-## 📁 Project Structure
+## 📂 Project Structure
 
 ```
-Ashare_DpointTrader 2.0/
+Ashare_DpointTrader-2.0/
 ├── main_cli.py              # Main entry point, CLI interface
 ├── data_loader.py           # Data loading and cleaning
 ├── feature_dpoint.py        # Feature engineering
@@ -431,8 +461,8 @@ Ashare_DpointTrader 2.0/
 ├── reporter.py              # Report generation
 ├── persistence.py           # Configuration persistence
 ├── constants.py             # Global constants
-├── config_schema.py         # Configuration schema and validation (engineering)
-├── structured_logging.py    # Structured logging configuration (engineering)
+├── config_schema.py         # Configuration schema and validation
+├── structured_logging.py    # Structured logging configuration
 ├── setup_check.py           # Startup verification script
 ├── requirements.txt         # Python dependencies
 ├── pyproject.toml           # Project configuration file
@@ -452,27 +482,9 @@ Ashare_DpointTrader 2.0/
     ├── test_splitter.py
     ├── test_reporter.py
     ├── test_main_cli.py
-    └── test_integration.py
+    ├── test_integration.py
+    └── test_e2e_config.py
 ```
-
-### Module Responsibilities
-
-| Module | Responsibility |
-|--------|----------------|
-| `main_cli.py` | Main entry, CLI parsing, startup checks, metadata recording |
-| `data_loader.py` | Excel reading, data cleaning, outlier filtering |
-| `feature_dpoint.py` | Build 80+ technical features, generate Dpoint labels |
-| `model_builder.py` | Create sklearn/XGBoost model pipelines |
-| `splitter.py` | Walk-forward time-series splitting |
-| `metrics.py` | Calculate geometric mean return, penalty, trade statistics |
-| `search_engine.py` | Random search main loop, hyperparameter sampling |
-| `trainer_optimizer.py` | Trainer API, final model training |
-| `backtester_engine.py` | Signal generation, trade simulation, equity calculation (with costs & slippage) |
-| `reporter.py` | Excel report generation, configuration saving |
-| `persistence.py` | Best configuration saving and loading |
-| `config_schema.py` | Configuration schema definition and validation (engineering) |
-| `structured_logging.py` | Structured logging configuration (engineering) |
-| `setup_check.py` | Startup checks (dependencies, data, output dir) |
 
 ---
 
@@ -492,13 +504,18 @@ Dpoint_t = P(close_{t+1} > close_t | X_t)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Fold 1: Train [0:60%] → Validate [60%:80%]             │
-│  Fold 2: Train [20%:80%] → Validate [80%:100%]          │
-│  ...                                                    │
+│  Walk-forward Splits (n_folds=4, train_start_ratio=0.5) │
+│                                                         │
+│  Fold 1: Train [0%~50%]  →  Validate [50%~62.5%]        │
+│  Fold 2: Train [0%~62%]  →  Validate [62.5%~75%]        │
+│  Fold 3: Train [0%~75%]  →  Validate [75%~87.5%]        │
+│  Fold 4: Train [0%~87%]  →  Validate [87.5%~100%]       │
+│                                                         │
+│  Features: Training set expands cumulatively            │
+│            (expanding window)                           │
+│            Validation sets do not overlap               │
 └─────────────────────────────────────────────────────────┘
 ```
-
-Each fold evaluates out-of-sample trading performance to ensure no overfitting.
 
 ### Random Search Algorithm
 
@@ -520,8 +537,11 @@ for iteration in range(runs):
 ### Trading Execution Logic
 
 1. **Signal Generation**: `dpoint > buy_threshold` → Buy signal; `dpoint < sell_threshold` → Sell signal
-2. **Signal Confirmation**: Trigger only after N consecutive days meeting threshold
-3. **Execution Simulation**: Day t signal executes at Day t+1 using Day t's close price (idealized)
+2. **Signal Confirmation**: Trigger only after N consecutive days meeting threshold (`confirm_days`)
+3. **Execution Simulation**: Day t signal executes on Day t+1 (using configured execution price model)
+   - `same_close_idealized`: Uses Day t's close price (idealized, legacy behavior)
+   - `next_open`: Uses Day t+1's open price (recommended, more realistic)
+   - `next_close`: Uses Day t+1's close price (conservative)
 4. **Position Management**: Allow closing only after satisfying `min_hold_days`
 
 ---
@@ -531,245 +551,88 @@ for iteration in range(runs):
 ### Run All Tests
 
 ```bash
-cd "Ashare_DpointTrader 2.0"
+cd Ashare_DpointTrader-2.0
 pytest tests/ -v
 ```
 
-### Run Specific Test File
+### Run Specific Tests
 
 ```bash
-# Backtest engine tests
+# Backtester engine tests
 pytest tests/test_backtester.py -v
 
 # Feature engineering tests
 pytest tests/test_features.py -v
 
-# Data splitter tests
-pytest tests/test_splitter.py -v
-
-# Reporter tests
-pytest tests/test_reporter.py -v
-
-# CLI tests
-pytest tests/test_main_cli.py -v
+# End-to-end configuration tests
+pytest tests/test_e2e_config.py -v
 
 # Integration tests (slowest)
 pytest tests/test_integration.py -v
 ```
 
-### Run Specific Test
-
-```bash
-# Run a single test function
-pytest tests/test_backtester.py::TestTransactionCosts::test_buy_commission_minimum -v
-```
-
-### Run with Coverage
+### Generate Coverage Report
 
 ```bash
 # Install coverage tool
 pip install pytest-cov
 
-# Run with coverage report
+# Run and generate coverage report
 pytest --cov=. --cov-report=html
-
-# Open coverage report
-# On Windows: start htmlcov/index.html
-# On Linux/macOS: open htmlcov/index.html
 ```
-
-### Test Coverage Summary
-
-| Test Module | Coverage |
-|-------------|----------|
-| `test_backtester.py` | T+1 execution, transaction costs, slippage, position constraints, take-profit/stop-loss |
-| `test_features.py` | Label construction, feature families, no look-ahead bias |
-| `test_splitter.py` | Walk-forward splitting, no data leakage |
-| `test_reporter.py` | Sheet names, config JSON, formula escaping |
-| `test_main_cli.py` | Default path, parameter parsing, startup checks |
-| `test_integration.py` | End-to-end pipeline test |
 
 ---
 
-## 🔧 Engineering Features
+## ⚙️ Engineering Features
 
-### 1. Configuration Schema
-
-Strict configuration schema with type checking and validation:
-
-```python
-from config_schema import FullConfig, FeatureConfig, ModelConfig, TradeConfig
-
-config = FullConfig(
-    feature_config=FeatureConfig(windows=[3, 5], ...),  # Type-checked
-    model_config=ModelConfig(model_type="logreg", ...),  # Validated
-    trade_config=TradeConfig(...),
-)
-errors = config.validate()  # Explicit validation
-```
-
-### 2. Structured Logging
-
-Unified logging with JSON output to files and colored console output:
-
-```python
-from structured_logging import setup_logger
-
-logger = setup_logger(
-    name="dpoint_trader",
-    level="INFO",
-    log_dir="./logs",
-    console_output=True,
-    file_output=True,
-)
-
-# Log with extra fields
-logger.info("Starting training", extra={"runs": 100, "seed": 42})
-```
-
-**Log output example:**
-```json
-{"timestamp": "2026-03-14T10:30:00", "level": "INFO", "message": "Starting training", "runs": 100, "seed": 42}
-```
-
-### 3. Full Metadata Recording
-
-Records complete run metadata for reproducibility:
-- Code version (git commit)
-- Python version
-- All dependency versions
-- Data file hash
-- Random seed
-- Hostname and timestamp
-
-**Usage:**
-```bash
-# Metadata recording enabled by default
-python main_cli.py --runs 100
-
-# Reproduce from metadata file
-python main_cli.py --config output/run_001_metadata.json
-```
-
-### 4. One-Command Reproduction
-
-```bash
-# Exact reproduction (same seed, same config)
-python main_cli.py --config output/run_042_metadata.json
-
-# Load config but override parameters
-python main_cli.py --config output/run_042_config.json --runs 500 --seed 123
-```
+- **Configuration Schema**: Strict configuration structure using Pydantic, supports validation and serialization
+- **Configuration Persistence**: Best configuration auto-saved to JSON, supports reproduction
+- **Structured Logging**: JSON format logs with performance tracking and diagnostics
+- **Startup Checks**: Automatically checks dependencies, data files, and output directory before running
+- **Version Tracking**: Records code version, Python version, dependency versions, git commit
+- **Data Hash**: Uses SHA-256 to calculate data file hash, ensures data consistency
+- **Test Coverage**: End-to-end tests protect core functionality, prevent regression from refactoring
 
 ---
 
 ## ❓ FAQ
 
-### Q1: Error "No module named 'xlsxwriter'" at runtime
+### Q: Why is WalkForwardSummary most important?
 
-**A**: xlsxwriter is a required dependency. Install:
+**A**: Each Walk-Forward fold uses unseen data, reflecting real expected performance. Training and validation sets are strictly separated, avoiding look-ahead bias.
+
+### Q: Why is EquityCurve for reference only?
+
+**A**: `EquityCurve` shows the **Full-Sample Fit result** (In-Sample):
+- Model is trained and predicted on the same data (information leakage)
+- Does not account for overnight gaps, slippage, and fill deviation (unless using realistic execution model)
+- Results are overly optimistic, **does not represent future live trading performance**
+
+**For real out-of-sample performance, see metrics in [WalkForwardSummary] and [SearchLog].**
+
+### Q: How to reproduce a previous run?
+
+**A**: Use `--config` parameter to load the previous metadata file:
 ```bash
-pip install xlsxwriter
-```
-
-### Q2: Running too slowly
-
-**A**: Recommendations:
-- Reduce `--runs` parameter (e.g., from 1000 to 100)
-- Enable parallel computing (enabled by default, uses `n_jobs=6`)
-- Install XGBoost and enable GPU acceleration
-
-### Q3: How to use my own data?
-
-**A**:
-1. Prepare Excel file with required columns (see [Data File Format](#data-file-format))
-2. Run:
-   ```bash
-   python main_cli.py --data_path "your_data.xlsx"
-   ```
-
-### Q4: How to reproduce results?
-
-**A**: Fix random seed and use metadata file:
-```bash
-python main_cli.py --seed 42 --runs 100
-# or
 python main_cli.py --config output/run_001_metadata.json
 ```
 
-### Q5: How to use `continue` mode?
+### Q: What's the difference between continue mode and first mode?
 
-**A**:
-```bash
-# First run
-python main_cli.py --mode first --runs 100
-
-# Continue optimization based on first run results
-python main_cli.py --mode continue --runs 100
-```
-
-### Q6: What does "IN-SAMPLE" warning in output files mean?
-
-**A**: The final report's equity curve is a full-sample fit result (training set = test set), which has look-ahead bias and is overly optimistic. **For real out-of-sample performance, check the walk-forward validation metrics in the `WalkForwardSummary` sheet**.
-
-### Q7: Data file not found?
-
-**A**:
-1. Confirm `data/600698_5Y_daily_qfq_20210302_20260302.xlsx` exists
-2. Or use `--data_path` to specify your data file
-3. Or set environment variable:
-   ```bash
-   # Windows
-   set ASHARE_DATA_PATH=path/to/your/data.xlsx
-   
-   # Linux/macOS
-   export ASHARE_DATA_PATH=path/to/your/data.xlsx
-   ```
-
-### Q8: How to adjust transaction costs and slippage?
-
-**A**:
-```bash
-# Customize commission and slippage
-python main_cli.py --commission_rate 0.0003 --slippage_bps 15
-```
+**A**: 
+- `first` mode: Starts random search from scratch
+- `continue` mode: Reads the best configuration from the latest run in `output/` directory and continues optimization
 
 ---
 
 ## ⚠️ Disclaimer
 
-1. **This software is for learning and research purposes only** and does not constitute investment advice or recommendation.
+This software is for academic research and educational purposes only, and does not constitute investment advice. Any trading behavior conducted using this software is at the user's own risk. The author is not responsible for any direct or indirect losses.
 
-2. **Historical backtest performance does not represent future results**. Quantitative strategies carry risks of overfitting, market changes, execution deviations, etc.
+Financial market trading involves significant risks, including but not limited to:
+- Market volatility risk
+- Liquidity risk
+- Technical failure risk
+- Model failure risk
 
-3. **Live trading carries high risk** and may result in loss of principal. Please use with caution after fully understanding the strategy logic and risks.
-
-4. **The author is not responsible for any direct or indirect losses**. All consequences arising from the use of this software are borne by the user.
-
-5. **Do not use this software for illegal purposes**. Comply with local laws, regulations, and securities regulatory requirements.
-
----
-
-## 📧 Contact
-
-For questions or suggestions, please contact via GitHub Issues.
-
----
-
-## 📝 Version History
-
-### Version 2.0 (Current)
-
-**New Features:**
-- ✅ Realistic execution model (transaction costs, slippage, multiple execution price models)
-- ✅ In-sample / out-of-sample results separation (WalkForwardSummary sheet)
-- ✅ Configuration schema (type checking, validation)
-- ✅ Structured logging (JSON format, performance tracking)
-- ✅ Full metadata recording (for reproduction)
-- ✅ Test suite (100+ test cases)
-- ✅ Startup checks (dependencies, data, output directory)
-
-**Improvements:**
-- ✅ Default data path changed to relative path
-- ✅ Completed requirements.txt and pyproject.toml
-- ✅ Documentation fully updated and aligned with actual code
+Please use with caution after fully understanding the risks and evaluating your own risk tolerance.
