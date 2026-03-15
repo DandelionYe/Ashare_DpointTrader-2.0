@@ -3,149 +3,153 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**A 股单股票机器学习交易策略系统**
-
-基于机器学习预测次日涨跌概率（Dpoint），结合 walk-forward 验证和随机搜索超参数优化的量化交易回测框架。
+**Language / 语言**: [English](README.md) | [简体中文](README_Chinese_ver.md)
 
 ---
 
-## 📋 目录
+**A-Share Single-Stock ML Trading Strategy System**
 
-- [快速开始](#-快速开始)
-- [功能特性](#-功能特性)
-- [系统要求](#-系统要求)
-- [安装步骤](#-安装步骤)
-- [使用说明](#-使用说明)
-- [配置 Schema](#-配置-schema)
-- [命令行参数](#-命令行参数)
-- [配置优先级](#-配置优先级)
-- [复现文件说明](#-复现文件说明)
-- [风险规则说明](#-风险规则说明)
-- [真实执行模型](#-真实执行模型)
-- [数据文件](#-数据文件)
-- [输出文件](#-输出文件)
-- [项目结构](#-项目结构)
-- [核心算法](#-核心算法)
-- [测试](#-测试)
-- [工程化特性](#-工程化特性)
-- [常见问题](#-常见问题)
-- [免责声明](#-免责声明)
+A quantitative trading backtesting framework based on machine learning prediction of next-day price movement (Dpoint), combined with walk-forward validation and random search hyperparameter optimization.
 
 ---
 
-## 🚀 快速开始
+## 📋 Table of Contents
 
-### 5 分钟开始使用
+- [Quick Start](#-quick-start)
+- [Features](#-features)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Configuration Schema](#-configuration-schema)
+- [CLI Parameters](#-cli-parameters)
+- [Configuration Priority](#-configuration-priority)
+- [Reproduction Files](#-reproduction-files)
+- [Risk Rules](#-risk-rules)
+- [Realistic Execution](#-realistic-execution)
+- [Data Files](#-data-files)
+- [Output Files](#-output-files)
+- [Project Structure](#-project-structure)
+- [Core Algorithms](#-core-algorithms)
+- [Testing](#-testing)
+- [Engineering Features](#-engineering-features)
+- [FAQ](#-faq)
+- [Disclaimer](#-disclaimer)
+
+---
+
+## 🚀 Quick Start
+
+### 5-Minute Setup
 
 ```bash
-# 1. 克隆项目
+# 1. Clone project
 git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 
-# 2. 安装依赖
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. 验证安装
+# 3. Verify installation
 python main_cli.py --help
 
-# 4. 运行示例（使用内置示例数据）
+# 4. Run example (using built-in sample data)
 python main_cli.py
 
-# 5. 查看结果（在 output/ 目录）
-# - run_001.xlsx          # 回测报告
-# - run_001_config.json   # 最优配置
-# - run_001_metadata.json # 完整元数据（用于复现）
+# 5. View results (in output/ directory)
+# - run_001.xlsx          # Backtest report
+# - run_001_config.json   # Best configuration
+# - run_001_metadata.json # Full metadata (for reproduction)
 ```
 
-### Windows 用户虚拟环境（可选）
+### Windows Virtual Environment (Optional)
 
 ```bash
-# 创建虚拟环境
+# Create virtual environment
 python -m venv venv
 
-# 激活虚拟环境
+# Activate virtual environment
 # PowerShell:
 .\venv\Scripts\Activate.ps1
 # CMD:
 .\venv\Scripts\activate.bat
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 
-# 运行
+# Run
 python main_cli.py
 ```
 
-### 打开 Excel 报告
+### Opening Excel Report
 
-1. **首先查看** `WalkForwardSummary` Sheet（样本外指标 - 主 KPI）
-2. **查看** `ExecutionAssumptions` Sheet（执行假设说明）
-3. **然后查看** `Trades` Sheet（交易记录）
-4. `EquityCurve` Sheet 仅供参考（样本内结果）
-
----
-
-## ✨ 功能特性
-
-### 核心功能
-
-- **Dpoint 预测模型**: 预测次日收盘价上涨的概率 `P(close_{t+1} > close_t | X_t)`
-- **Walk-forward 验证**: 时间序列交叉验证，避免前向偏差，确保样本外评估
-- **随机搜索优化**: 自动搜索最优特征组合、模型参数和交易策略参数
-- **多模型支持**: Logistic Regression, SGDClassifier, XGBoost (支持 GPU 加速)
-- **A 股交易约束**: 支持 T+1、最小 100 股单位、仅做多等 A 股规则
-- **真实执行模型**: 交易成本（佣金、印花税、过户费）、滑点、多种执行价模型
-
-### 技术特性
-
-- **特征工程**: 动量、波动率、成交量、换手率、K 线形态等 5 大家族 80+ 特征
-- **早停剪枝**: 自动淘汰劣质配置，加速搜索过程
-- **并行搜索**: 利用多核 CPU 并行评估候选配置
-- **CUDA 加速**: 自动检测并启用 XGBoost GPU 加速
-- **持续学习**: 支持 `continue` 模式，基于历史最优配置继续优化
-- **结构化日志**: JSON 格式日志，支持性能追踪
-- **完整元数据**: 记录代码版本、依赖版本、git commit，支持精确复现
-- **配置 Schema**: 使用 Pydantic 定义严格的配置结构，支持配置验证和序列化
+1. **First check** `WalkForwardSummary` sheet (Out-of-sample metrics - PRIMARY KPIs)
+2. **Check** `ExecutionAssumptions` sheet (Execution assumptions)
+3. **Then check** `Trades` sheet (Trade records)
+4. `EquityCurve` sheet is for reference only (In-sample results)
 
 ---
 
-## 💻 系统要求
+## ✨ Features
 
-### 必需环境
+### Core Capabilities
 
-- **操作系统**: Windows / Linux / macOS
-- **Python**: 3.8 或更高版本
-- **内存**: 建议 8GB 以上
+- **Dpoint Prediction Model**: Predicts probability of next-day close price increase `P(close_{t+1} > close_t | X_t)`
+- **Walk-forward Validation**: Time-series cross-validation to avoid look-ahead bias, ensures out-of-sample evaluation
+- **Random Search Optimization**: Auto-search for optimal feature combinations, model parameters, and trading strategy parameters
+- **Multi-Model Support**: Logistic Regression, SGDClassifier, XGBoost (with GPU acceleration)
+- **A-Share Trading Constraints**: Supports T+1, minimum 100-share units, long-only, and other A-share rules
+- **Realistic Execution Model**: Transaction costs (commission, stamp tax, transfer fee), slippage, multiple execution price models
 
-### Python 依赖
+### Technical Features
 
-**必需：**
+- **Feature Engineering**: 80+ features across 5 families - momentum, volatility, volume, turnover rate, candlestick patterns
+- **Early Stopping Pruning**: Automatically eliminates poor configurations to accelerate search
+- **Parallel Search**: Utilizes multi-core CPU for parallel candidate evaluation
+- **CUDA Acceleration**: Auto-detects and enables XGBoost GPU acceleration
+- **Continuous Learning**: Supports `continue` mode to optimize based on historical best configurations
+- **Structured Logging**: JSON format logs with performance tracking
+- **Full Metadata Recording**: Records code version, dependency versions, git commit for exact reproduction
+- **Configuration Schema**: Strict configuration structure using Pydantic, supports validation and serialization
+
+---
+
+## 💻 Requirements
+
+### System Requirements
+
+- **OS**: Windows / Linux / macOS
+- **Python**: 3.8 or higher
+- **Memory**: 8GB or more recommended
+
+### Python Dependencies
+
+**Required:**
 ```
 pandas>=1.3.0
 numpy>=1.20.0
 scikit-learn>=0.24.0
-openpyxl>=3.0.0        # Excel 读写
-xlsxwriter>=3.0.0      # Excel 输出（必需）
-joblib>=1.1.0          # 并行计算
+openpyxl>=3.0.0        # Excel read/write
+xlsxwriter>=3.0.0      # Excel output (required)
+joblib>=1.1.0          # Parallel computing
 ```
 
-**可选：**
+**Optional:**
 ```
-xgboost>=1.5.0         # XGBoost 模型（启用 GPU 加速）
+xgboost>=1.5.0         # XGBoost model (GPU acceleration)
 ```
 
 ---
 
-## 📥 安装步骤
+## 📥 Installation
 
-### 1. 克隆或下载项目
+### 1. Clone or Download Project
 
 ```bash
 git clone https://github.com/DandelionYe/Ashare_DpointTrader-2.0.git
 cd Ashare_DpointTrader-2.0
 ```
 
-### 2. 创建虚拟环境（推荐）
+### 2. Create Virtual Environment (Recommended)
 
 ```bash
 # Windows (PowerShell)
@@ -161,215 +165,215 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. 安装依赖
+### 3. Install Dependencies
 
-**方式 A：使用 requirements.txt（推荐）**
+**Option A: Using requirements.txt (Recommended)**
 ```bash
 pip install -r requirements.txt
 ```
 
-**方式 B：使用 pyproject.toml**
+**Option B: Using pyproject.toml**
 ```bash
 pip install .
 ```
 
-**方式 C：手动安装**
+**Option C: Manual Installation**
 ```bash
 pip install pandas numpy scikit-learn openpyxl xlsxwriter joblib
 
-# 可选：安装 XGBoost（启用 GPU 加速）
+# Optional: Install XGBoost (GPU acceleration)
 pip install xgboost
 ```
 
-### 4. 验证安装
+### 4. Verify Installation
 
 ```bash
-# 快速验证（检查依赖和数据文件）
+# Quick verification (check dependencies and data files)
 python main_cli.py --help
 
-# 或运行启动检查（不执行回测）
+# Or run startup checks (without backtesting)
 python setup_check.py
 ```
 
 ---
 
-## 🎯 使用说明
+## 🎯 Usage
 
-### 默认运行（使用示例数据）
+### Default Run (Using Sample Data)
 
-项目已包含示例数据文件 `data/600698_5Y_daily_qfq_20210302_20260302.xlsx`，可直接运行：
+Project includes sample data file `data/600698_5Y_daily_qfq_20210302_20260302.xlsx`, can run directly:
 
 ```bash
 python main_cli.py
 ```
 
-### 自定义运行
+### Custom Run
 
 ```bash
-# 基础运行 - 100 次迭代
+# Basic run - 100 iterations
 python main_cli.py --mode first --runs 100 --seed 42
 
-# 深度搜索 - 1000 次迭代
+# Deep search - 1000 iterations
 python main_cli.py --mode first --runs 1000 --seed 42
 
-# 继续模式 - 基于上次结果继续优化
+# Continue mode - Continue optimization based on previous results
 python main_cli.py --mode continue --runs 500
 
-# 使用自己的数据文件
+# Use your own data file
 python main_cli.py --data_path "path/to/your/data.xlsx" --runs 100
 
-# 真实执行模式 - 使用开盘价 + 交易成本 + 滑点（推荐）
+# Realistic execution mode - Use open price + transaction costs + slippage (recommended)
 python main_cli.py --mode first --runs 100 --exec_price_model next_open --slippage_bps 10
 
-# 复现上次运行
+# Reproduce previous run
 python main_cli.py --config output/run_001_metadata.json
 
-# 禁用元数据记录
+# Disable metadata recording
 python main_cli.py --no-record-metadata
 ```
 
 ---
 
-## 🧬 配置 Schema
+## 🧬 Configuration Schema
 
-配置通过 `FullConfig` 管理，包含以下子配置：
+Configuration is managed through `FullConfig`, containing the following sub-configurations:
 
-### 1. FeatureConfig（特征工程）
+### 1. FeatureConfig
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `windows` | 整数列表 | `[3, 5, 10, 20]` | 滚动窗口大小 |
-| `use_momentum` | 布尔 | `True` | 是否使用动量特征 |
-| `use_volatility` | 布尔 | `True` | 是否使用波动率特征 |
-| `use_volume` | 布尔 | `True` | 是否使用成交量特征 |
-| `use_candle` | 布尔 | `True` | 是否使用 K 线形态特征 |
-| `use_turnover` | 布尔 | `True` | 是否使用换手率特征 |
-| `vol_metric` | `std`/`mad` | `std` | 波动率计算方式 |
-| `liq_transform` | `ratio`/`zscore` | `ratio` | 流动性转换方式 |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `windows` | Integer list | `[3, 5, 10, 20]` | Rolling window sizes |
+| `use_momentum` | Boolean | `True` | Use momentum features |
+| `use_volatility` | Boolean | `True` | Use volatility features |
+| `use_volume` | Boolean | `True` | Use volume features |
+| `use_candle` | Boolean | `True` | Use candlestick pattern features |
+| `use_turnover` | Boolean | `True` | Use turnover rate features |
+| `vol_metric` | `std`/`mad` | `std` | Volatility calculation method |
+| `liq_transform` | `ratio`/`zscore` | `ratio` | Liquidity transformation method |
 
-### 2. ModelConfig（模型配置）
+### 2. ModelConfig
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `model_type` | `logreg`/`sgd`/`xgb` | `logreg` | 模型类型 |
-| `C` | 浮点数 | `1.0` | Logistic 回归正则化强度 |
-| `penalty` | `l1`/`l2`/`elasticnet` | `l2` | 正则化类型 |
-| `solver` | 字符串 | `lbfgs` | 优化算法 |
-| `alpha` | 浮点数 | `1e-4` | SGD 正则化强度 |
-| `n_estimators` | 整数 | `100` | XGBoost 树数量 |
-| `max_depth` | 整数 | `3` | XGBoost 树最大深度 |
-| `learning_rate` | 浮点数 | `0.1` | XGBoost 学习率 |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `model_type` | `logreg`/`sgd`/`xgb` | `logreg` | Model type |
+| `C` | Float | `1.0` | Logistic regression regularization strength |
+| `penalty` | `l1`/`l2`/`elasticnet` | `l2` | Regularization type |
+| `solver` | String | `lbfgs` | Optimization algorithm |
+| `alpha` | Float | `1e-4` | SGD regularization strength |
+| `n_estimators` | Integer | `100` | XGBoost tree count |
+| `max_depth` | Integer | `3` | XGBoost tree max depth |
+| `learning_rate` | Float | `0.1` | XGBoost learning rate |
 
-### 3. TradeConfig（交易执行）
+### 3. TradeConfig
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `initial_cash` | 浮点数 | `100000` | 初始资金（元） |
-| `buy_threshold` | 浮点数 | `0.55` | 买入 Dpoint 阈值 |
-| `sell_threshold` | 浮点数 | `0.45` | 卖出 Dpoint 阈值 |
-| `confirm_days` | 整数 | `2` | 信号确认天数 |
-| `min_hold_days` | 整数 | `1` | 最短持仓天数 |
-| `max_hold_days` | 整数 | `20` | 最长持仓天数 |
-| `take_profit` | 浮点数 | `None` | 止盈阈值（EOD-based） |
-| `stop_loss` | 浮点数 | `None` | 止损阈值（EOD-based） |
-| `exec_price_model` | 字符串 | `next_open` | 执行价模型 |
-| `slippage_bps` | 浮点数 | `10.0` | 滑点（基点） |
-| `commission_rate` | 浮点数 | `0.00025` | 佣金率 |
-| `commission_min` | 浮点数 | `5.0` | 最低佣金 |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `initial_cash` | Float | `100000` | Initial capital (CNY) |
+| `buy_threshold` | Float | `0.55` | Buy Dpoint threshold |
+| `sell_threshold` | Float | `0.45` | Sell Dpoint threshold |
+| `confirm_days` | Integer | `2` | Signal confirmation days |
+| `min_hold_days` | Integer | `1` | Minimum holding days |
+| `max_hold_days` | Integer | `20` | Maximum holding days |
+| `take_profit` | Float | `None` | Take-profit threshold (EOD-based) |
+| `stop_loss` | Float | `None` | Stop-loss threshold (EOD-based) |
+| `exec_price_model` | String | `next_open` | Execution price model |
+| `slippage_bps` | Float | `10.0` | Slippage (basis points) |
+| `commission_rate` | Float | `0.00025` | Commission rate |
+| `commission_min` | Float | `5.0` | Minimum commission |
 
-### 4. SearchConfig（随机搜索超参数）
+### 4. SearchConfig
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `runs` | 整数 | `100` | 随机搜索迭代次数 |
-| `epsilon` | 浮点数 | `0.01` | 最小改进阈值 |
-| `exploit_ratio` | 浮点数 | `0.7` | 局部扰动比例（70% 利用，30% 探索） |
-| `top_k` | 整数 | `10` | Top-K 池大小 |
-| `max_features` | 整数 | `80` | 最大特征数 |
-| `n_jobs` | 整数 | `-1` | 并行进程数（-1=全部核心，1=单线程） |
-
----
-
-## 🔧 命令行参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--mode` | `first` / `continue` | `first` | 运行模式 |
-| `--data_path` | 字符串 | 内置默认路径 | Excel 数据文件路径 |
-| `--output_dir` | 字符串 | `./output` | 输出目录 |
-| `--runs` | 整数 | `100` | 随机搜索迭代次数 |
-| `--seed` | 整数 | `42` | 随机种子（base seed） |
-| `--initial_cash` | 浮点数 | `100000` | 初始资金（元） |
-| `--exec_price_model` | 字符串 | `next_open` | 执行价模型 |
-| `--slippage_bps` | 浮点数 | `10.0` | 滑点（基点） |
-| `--commission_rate` | 浮点数 | `0.00025` | 佣金率 |
-| `--commission_min` | 浮点数 | `5.0` | 最低佣金 |
-| `--config` | 字符串 | `None` | 从配置文件加载（用于复现） |
-| `--record-metadata` | 布尔 | `True` | 记录元数据（使用 `--no-record-metadata` 关闭） |
-| `--log_dir` | 字符串 | `./logs` | 日志目录 |
-
-### 运行模式说明
-
-#### `first` 模式
-- 从头开始随机搜索
-- 适用于首次运行或更换数据后
-
-#### `continue` 模式
-- 读取 `output/` 目录下最新运行的最优配置
-- 在此基础上继续优化
-- 适用于迭代改进策略
-
-### 随机种子语义
-
-系统使用三种种子确保可复现性：
-
-| 种子名称 | 说明 | 计算方式 |
-|----------|------|----------|
-| **Base Seed** | CLI 传入的基础种子（`--seed`） | 用户指定，默认 42 |
-| **Search Seed** | 实际用于随机搜索的种子 | `base_seed + latest_run_id` |
-| **Final Train Seed** | 用于最终全样本模型训练的种子 | 始终等于 `base_seed` |
-
-**复现策略**：
-- **首次运行（first 模式）**：三种种子相同
-- **继续运行（continue 模式）**：Search Seed = Base Seed + 上次 run_id
-- **精确复现**：使用 `--config run_XXX_metadata.json` 加载配置，并使用相同的 `--seed` 值
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `runs` | Integer | `100` | Random search iterations |
+| `epsilon` | Float | `0.01` | Minimum improvement threshold |
+| `exploit_ratio` | Float | `0.7` | Local exploitation ratio (70% exploit, 30% explore) |
+| `top_k` | Integer | `10` | Top-K pool size |
+| `max_features` | Integer | `80` | Maximum features |
+| `n_jobs` | Integer | `-1` | Parallel processes (-1=all cores, 1=single thread) |
 
 ---
 
-## 🔀 配置优先级
+## 🔧 CLI Parameters
 
-系统使用三级配置优先级，确保灵活性和可复现性：
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `--mode` | `first` / `continue` | `first` | Run mode |
+| `--data_path` | String | Built-in default | Excel data file path |
+| `--output_dir` | String | `./output` | Output directory |
+| `--runs` | Integer | `100` | Random search iterations |
+| `--seed` | Integer | `42` | Random seed (base seed) |
+| `--initial_cash` | Float | `100000` | Initial capital (CNY) |
+| `--exec_price_model` | String | `next_open` | Execution price model |
+| `--slippage_bps` | Float | `10.0` | Slippage (basis points) |
+| `--commission_rate` | Float | `0.00025` | Commission rate |
+| `--commission_min` | Float | `5.0` | Minimum commission |
+| `--config` | String | `None` | Load from config file (for reproduction) |
+| `--record-metadata` | Boolean | `True` | Record metadata (use `--no-record-metadata` to disable) |
+| `--log_dir` | String | `./logs` | Log directory |
+
+### Run Modes
+
+#### `first` Mode
+- Starts random search from scratch
+- Suitable for first run or after changing data
+
+#### `continue` Mode
+- Reads the best configuration from the latest run in `output/` directory
+- Continues optimization based on it
+- Suitable for iterative strategy improvement
+
+### Random Seed Semantics
+
+The system uses three seeds to ensure reproducibility:
+
+| Seed Name | Description | Calculation |
+|-----------|-------------|-------------|
+| **Base Seed** | CLI input base seed (`--seed`) | User specified, default 42 |
+| **Search Seed** | Actual seed for random search | `base_seed + latest_run_id` |
+| **Final Train Seed** | Seed for final full-sample model training | Always equals `base_seed` |
+
+**Reproduction Strategy**:
+- **First run (first mode)**: All three seeds are the same
+- **Continue run (continue mode)**: Search Seed = Base Seed + previous run_id
+- **Exact reproduction**: Use `--config run_XXX_metadata.json` with the same `--seed` value
+
+---
+
+## 🔀 Configuration Priority
+
+The system uses a three-level configuration priority to ensure flexibility and reproducibility:
 
 ```
 CLI overrides > config file > built-in defaults
 ```
 
-| 优先级 | 来源 | 说明 | 示例 |
-|--------|------|------|------|
-| **最高** | CLI 参数 | 命令行传入的参数 | `--runs 1000 --seed 42` |
-| **中等** | 配置文件 | `--config run_XXX_metadata.json` | 从上次运行加载 |
-| **最低** | 内置默认值 | 代码中的默认值 | `runs=100`, `seed=42` |
+| Priority | Source | Description | Example |
+|----------|--------|-------------|---------|
+| **Highest** | CLI parameters | Command-line arguments | `--runs 1000 --seed 42` |
+| **Medium** | Config file | `--config run_XXX_metadata.json` | Load from previous run |
+| **Lowest** | Built-in defaults | Default values in code | `runs=100`, `seed=42` |
 
-**重要说明**：
-- `--runs` 参数：如果同时使用 `--config` 和 `--runs`，CLI 的 `--runs` 值会覆盖配置文件中的 `search_config.runs`
-- `--seed` 参数：CLI 的 `--seed` 作为 base seed，search seed 会根据模式自动计算
-- 执行成本参数（`--slippage_bps`、`--commission_rate` 等）：CLI 非默认值会覆盖配置文件
+**Important Notes**:
+- `--runs` parameter: If using both `--config` and `--runs`, CLI value overrides `search_config.runs` in config file
+- `--seed` parameter: CLI `--seed` is base seed; search seed is calculated based on mode
+- Execution cost parameters (`--slippage_bps`, `--commission_rate`, etc.): CLI non-default values override config file
 
-**推荐实践**：
-- 复现上次运行：`python main_cli.py --config output/run_001_metadata.json`（不传 `--runs`，使用文件中的值）
-- 修改参数重新运行：`python main_cli.py --config output/run_001_metadata.json --runs 500`（覆盖 runs）
+**Recommended Practice**:
+- Reproduce previous run: `python main_cli.py --config output/run_001_metadata.json` (don't pass `--runs`, use file value)
+- Modify parameters and rerun: `python main_cli.py --config output/run_001_metadata.json --runs 500` (override runs)
 
 ---
 
-## 📋 复现文件说明
+## 📋 Reproduction Files
 
-系统生成两种配置文件，用途不同：
+The system generates two configuration files with different purposes:
 
-### run_XXX_metadata.json - 完整运行元数据
+### run_XXX_metadata.json - Full Run Metadata
 
-**用途**：精确复现整个运行，包含所有运行时上下文。
+**Purpose**: Exact reproduction of entire run, including all runtime context.
 
-**包含字段**：
+**Fields**:
 ```json
 {
   "run_id": 1,
@@ -385,228 +389,228 @@ CLI overrides > config file > built-in defaults
   "mode": "first",
   "effective_runs": 100,
   "effective_config_source": "CLI/default",
-  "config": {...},  // 完整复现配置 (repro_config)
+  "config": {...},  // Full repro_config
   "git_commit": "...",
   "hostname": "...",
   "notes": [...]
 }
 ```
 
-**使用方法**：
+**Usage**:
 ```bash
 python main_cli.py --config output/run_001_metadata.json
 ```
 
-### run_XXX_config.json - 配置快照
+### run_XXX_config.json - Configuration Snapshot
 
-**用途**：快速查看和对比配置，便于人工阅读。
+**Purpose**: Quick viewing and comparison of configurations, for human reading.
 
-**包含字段**：
+**Fields**:
 ```json
 {
   "run_id": 1,
   "created_at": "...",
   "data_hash": "...",
-  "best_strategy_config": {...},  // 最佳策略参数（仅特征/模型/交易阈值）
-  "repro_config": {...},          // 完整复现配置（包含执行假设/search_config/分割参数）
-  "run_context": {...},           // 运行上下文（mode/seeds/config_source 等）
+  "best_strategy_config": {...},  // Best strategy params (features/model/trade thresholds only)
+  "repro_config": {...},          // Full repro config (includes execution assumptions/search_config/split params)
+  "run_context": {...},           // Runtime context (mode/seeds/config_source/etc.)
   "feature_meta": {...},
   "notes": {...}
 }
 ```
 
-**关键区别**：
-- `best_strategy_config`：仅包含可优化的策略参数（特征窗口、模型超参、买卖阈值）
-- `repro_config`：包含完整复现所需的所有配置（执行成本、滑点、search_config、n_folds 等）
+**Key Differences**:
+- `best_strategy_config`: Contains only optimizable strategy parameters (feature windows, model hyperparameters, buy/sell thresholds)
+- `repro_config`: Contains all configuration needed for full reproduction (execution costs, slippage, search_config, n_folds, etc.)
 
-**推荐实践**：
-- 人工查看/对比配置：打开 `run_XXX_config.json`
-- 程序化复现：使用 `run_XXX_metadata.json` 或 `run_XXX_config.json` 均可
+**Recommended Practice**:
+- Human viewing/comparison: Open `run_XXX_config.json`
+- Programmatic reproduction: Use either `run_XXX_metadata.json` or `run_XXX_config.json`
 
 ---
 
-## ⚠️ 风险规则说明
+## ⚠️ Risk Rules
 
-### 止盈/止损触发机制（EOD-based）
+### Take-Profit/Stop-Loss Trigger Mechanism (EOD-based)
 
-系统当前使用 **EOD-based（End-of-Day，收盘价判断）** 机制，**不是** intraday-based（盘中高低点判断）。
+The system currently uses **EOD-based (End-of-Day, close price judgment)** mechanism, **not** intraday-based (high/low price judgment).
 
-**触发逻辑**：
-1. 每日收盘后，使用当日 `close_qfq` 计算盈亏比例
-2. 若 `pnl_ratio >= take_profit`，标记为 "EOD take_profit reached"，次日执行卖出
-3. 若 `pnl_ratio <= -stop_loss`，标记为 "EOD stop_loss reached"，次日执行卖出
+**Trigger Logic**:
+1. After market close each day, calculate profit/loss ratio using `close_qfq`
+2. If `pnl_ratio >= take_profit`, mark as "EOD take_profit reached", execute sell next day
+3. If `pnl_ratio <= -stop_loss`, mark as "EOD stop_loss reached", execute sell next day
 
-**不会触发的情况**：
-- 盘中 `high_qfq` 触及止盈，但 `close_qfq` 未触及 → **不触发**
-- 盘中 `low_qfq` 跌破止损，但 `close_qfq` 未跌破 → **不触发**
+**Will NOT Trigger**:
+- Intraday `high_qfq` touches take-profit, but `close_qfq` doesn't → **NOT triggered**
+- Intraday `low_qfq` breaks stop-loss, but `close_qfq` doesn't → **NOT triggered**
 
-**示例**：
+**Example**:
 ```
-第 5 天数据：
-  open_qfq:  10.0 元
-  high_qfq:  11.5 元  (+15%，盘中触及 10% 止盈)
-  low_qfq:   10.0 元
-  close_qfq: 10.5 元  (+5%，收盘未触及 10% 止盈)
+Day 5 Data:
+  open_qfq:  10.0 CNY
+  high_qfq:  11.5 CNY  (+15%, intraday touches 10% take-profit)
+  low_qfq:   10.0 CNY
+  close_qfq: 10.5 CNY  (+5%, close doesn't touch 10% take-profit)
 
-结果：止盈不触发，持仓继续保持
+Result: Take-profit NOT triggered, position continues
 ```
 
-**设计理由**：
-- EOD-based 更稳定，避免盘中噪音触发
-- 实盘更容易执行（无需实时监控）
-- 回测更保守，避免高估止盈/止损效果
+**Design Rationale**:
+- EOD-based is more stable, avoids intraday noise triggers
+- Easier to execute in live trading (no real-time monitoring needed)
+- More conservative backtesting, avoids overestimating take-profit/stop-loss effects
 
-**未来可能增强**：
-- 支持 `intraday` 模式（使用 `high_qfq`/`low_qfq` 判断）
-- 支持 `mixed` 模式（EOD 为主，intraday 为辅）
-
----
-
-## 📊 数据文件
-
-### 文件格式
-
-Excel 文件需包含以下列：
-
-| 列名 | 说明 | 示例 |
-|------|------|------|
-| `date` | 交易日期 | `2021-03-02` |
-| `open_qfq` | 前复权开盘价 | `10.5` |
-| `high_qfq` | 前复权最高价 | `11.2` |
-| `low_qfq` | 前复权最低价 | `10.3` |
-| `close_qfq` | 前复权收盘价 | `11.0` |
-| `volume` | 成交量 | `1000000` |
-| `amount` | 成交额 | `11000000` |
-| `turnover_rate` | 换手率 | `2.5` |
-
-> 💡 **提示**: 数据可通过 Tushare、Baostock、聚宽等数据源获取，导出为 Excel 格式即可。
-
-### 缺失值处理
-
-对于非核心列（`volume`、`amount`、`turnover_rate`）的缺失值，系统提供以下处理策略：
-
-| 策略 | 说明 | 标记列 |
-|------|------|--------|
-| `zero` (默认) | 填充为 0，并添加 `_was_missing` 标记列 | `volume_was_missing` 等 |
-| `ffill` | 使用前一日值向前填充 | `volume_was_missing` 等 |
-| `drop` | 直接删除缺失行 | - |
-| `keep_nan` | 保持 NaN，由特征工程处理 | `volume_was_missing` 等 |
-
-**默认策略说明**：
-- 填充为 0 时，会同时添加 `volume_was_missing`、`amount_was_missing`、`turnover_rate_was_missing` 布尔列
-- 这些标记列可用于区分"真实 0 成交"和"数据缺失补 0"
+**Future Enhancements**:
+- Support `intraday` mode (using `high_qfq`/`low_qfq` judgment)
+- Support `mixed` mode (EOD primary, intraday secondary)
 
 ---
 
-## 🔬 真实执行模型
+## 📊 Data Files
 
-Version 2.0 引入**真实执行模型**，考虑：
-- **执行价模型**: `same_close_idealized`, `next_open`, `next_close`
-- **交易成本**: 佣金、过户费、印花税
-- **滑点**: 固定基点（bps）滑点模型
+### File Format
 
-### 执行价模型
+Excel file must contain the following columns:
 
-| 模型 | 信号日 | 执行日 | 使用价格 | 说明 |
-|------|--------|--------|----------|------|
-| `same_close_idealized` | t | t+1 | t 日收盘价 | 理想化（旧版行为），低估隔夜跳空 |
-| `next_open` | t | t+1 | t+1 日开盘价 | **推荐**，更真实，捕捉隔夜风险 |
-| `next_close` | t | t+1 | t+1 日收盘价 | 保守估计 |
+| Column | Description | Example |
+|--------|-------------|---------|
+| `date` | Trading date | `2021-03-02` |
+| `open_qfq` | Adjusted open price | `10.5` |
+| `high_qfq` | Adjusted high price | `11.2` |
+| `low_qfq` | Adjusted low price | `10.3` |
+| `close_qfq` | Adjusted close price | `11.0` |
+| `volume` | Trading volume | `1000000` |
+| `amount` | Trading amount | `11000000` |
+| `turnover_rate` | Turnover rate | `2.5` |
 
-### 交易成本（A 股标准）
+> 💡 **Tip**: Data can be obtained from Tushare, Baostock, JoinQuant, etc. Export to Excel format.
 
-| 费用类型 | 费率 | 方向 | 最低 |
-|----------|------|------|------|
-| **佣金** | 0.025% (2.5‱) | 双向 | 5 元 |
-| **过户费** | 0.001% (0.1‱) | 双向 | - |
-| **印花税** | 0.05% (5‱) | 仅卖出 | -
+### Missing Value Handling
 
-### 滑点模型
+For non-core columns (`volume`, `amount`, `turnover_rate`), the system provides the following handling strategies:
 
-滑点以固定基点（bps）调整：
-- **买入**: 执行价 = 基准价 × (1 + slippage_bps / 10000)
-- **卖出**: 执行价 = 基准价 × (1 - slippage_bps / 10000)
+| Strategy | Description | Marker Columns |
+|----------|-------------|----------------|
+| `zero` (default) | Fill with 0, add `_was_missing` marker columns | `volume_was_missing`, etc. |
+| `ffill` | Forward fill from previous day | `volume_was_missing`, etc. |
+| `drop` | Drop rows with missing values | - |
+| `keep_nan` | Keep as NaN, handled by feature engineering | `volume_was_missing`, etc. |
 
-**默认**: 10 bps (0.1%)
-
-### 止盈/止损触发机制
-
-系统使用 **EOD-based（收盘价判断）** 机制：
-- 在每日收盘后，使用当日收盘价计算盈亏比例
-- 若 `pnl_ratio >= take_profit`，触发止盈，次日执行卖出
-- 若 `pnl_ratio <= -stop_loss`，触发止损，次日执行卖出
-- **不会**使用盘中高低点判断触发
+**Default Strategy Notes**:
+- When filling with 0, boolean marker columns (`volume_was_missing`, `amount_was_missing`, `turnover_rate_was_missing`) are added
+- These markers distinguish "true 0 volume" from "missing data filled with 0"
 
 ---
 
-## 📁 输出文件
+## 🔬 Realistic Execution
 
-运行完成后，`output/` 目录将生成以下文件：
+Version 2.0 introduces a **realistic execution model** that accounts for:
+- **Execution price models**: `same_close_idealized`, `next_open`, `next_close`
+- **Transaction costs**: Commission, transfer fee, stamp tax
+- **Slippage**: Fixed basis points (bps) slippage model
 
-### run_XXX.xlsx - 回测报告
+### Execution Price Models
 
-**重要：Sheet 按重要性排序，请首先查看 [WalkForwardSummary]。**
+| Model | Signal Day | Execution Day | Price Used | Note |
+|-------|------------|---------------|------------|------|
+| `same_close_idealized` | t | t+1 | Day t close | Idealized (legacy), underestimates overnight gap |
+| `next_open` | t | t+1 | Day t+1 open | **Recommended**, more realistic, captures overnight risk |
+| `next_close` | t | t+1 | Day t+1 close | Conservative estimate |
 
-| Sheet 名称 | 内容 | 优先级 |
-|------------|------|--------|
-| `WalkForwardSummary` | **Walk-Forward 样本外验证指标摘要**（主 KPI） | ⭐⭐⭐⭐⭐ |
-| `ExecutionAssumptions` | **执行假设说明**（执行价模型、滑点、交易成本、交易规则） | ⭐⭐⭐⭐⭐ |
-| `Trades` | 交易记录（买卖日期、价格、收益、成本、滑点等） | ⭐⭐⭐⭐ |
-| `EquityCurve` | 净值曲线（日期、净值、持仓、回撤、信号等） | ⭐⭐⭐ |
-| `FinalFit_InSample` | **样本内结果警告**（仅供参考，不代表样本外表现） | ⚠️ |
-| `SearchLog` | 完整的随机搜索迭代日志（每折详细指标、配置参数） | ⭐⭐⭐⭐ |
-| `Config` | 配置参数（特征、模型、交易参数、约束条件） | ⭐⭐⭐ |
-| `ModelParams` | 模型参数（特征系数、标准化参数、截距） | ⭐⭐ |
-| `Log` | 运行日志和诊断信息 | ⭐⭐ |
+### Transaction Costs (A-Share Standard)
 
-### run_XXX_config.json - 配置文件
+| Fee Type | Rate | Direction | Minimum |
+|----------|------|-----------|---------|
+| **Commission** | 0.025% (2.5‱) | Both sides | 5 CNY |
+| **Transfer Fee** | 0.001% (0.1‱) | Both sides | - |
+| **Stamp Tax** | 0.05% (5‱) | Sell only | - |
 
-包含最优配置和特征元数据的 JSON 文件，可用于后续运行的 `--config` 参数。
+### Slippage Model
 
-### run_XXX_metadata.json - 元数据文件
+Slippage adjusts by fixed basis points (bps):
+- **Buy**: Execution Price = Base Price × (1 + slippage_bps / 10000)
+- **Sell**: Execution Price = Base Price × (1 - slippage_bps / 10000)
 
-包含完整运行元数据，用于精确复现：
-- 代码版本（git commit）
-- Python 版本
-- 所有依赖版本
-- 数据文件哈希
-- 随机种子（base seed）
-- 主机名和时间戳
+**Default**: 10 bps (0.1%)
+
+### Take-Profit/Stop-Loss Trigger Mechanism
+
+The system uses **EOD-based (End-of-Day)** mechanism:
+- After market close, calculates PnL ratio using closing price
+- If `pnl_ratio >= take_profit`, triggers take-profit, executes sell next day
+- If `pnl_ratio <= -stop_loss`, triggers stop-loss, executes sell next day
+- Does **NOT** use intraday high/low for trigger
 
 ---
 
-## 📂 项目结构
+## 📁 Output Files
+
+After running, the `output/` directory will contain:
+
+### run_XXX.xlsx - Backtest Report
+
+**Important: Sheets are sorted by priority. First check [WalkForwardSummary].**
+
+| Sheet Name | Content | Priority |
+|------------|---------|----------|
+| `WalkForwardSummary` | **Walk-Forward Out-of-Sample Validation Metrics** (Key KPIs) | ⭐⭐⭐⭐⭐ |
+| `ExecutionAssumptions` | **Execution Assumptions** (price model, slippage, costs, rules) | ⭐⭐⭐⭐⭐ |
+| `Trades` | Trade records (buy/sell dates, prices, returns, costs, slippage, etc.) | ⭐⭐⭐⭐ |
+| `EquityCurve` | Equity curve (date, equity, position, drawdown, signals, etc.) | ⭐⭐⭐ |
+| `FinalFit_InSample` | **In-Sample Result Warning** (For reference only, not out-of-sample performance) | ⚠️ |
+| `SearchLog` | Complete random search iteration log (detailed metrics per fold, config params) | ⭐⭐⭐⭐ |
+| `Config` | Configuration parameters (features, model, trading params, constraints) | ⭐⭐⭐ |
+| `ModelParams` | Model parameters (feature coefficients, scaler params, intercept) | ⭐⭐ |
+| `Log` | Run logs and diagnostic information | ⭐⭐ |
+
+### run_XXX_config.json - Configuration File
+
+JSON file containing the best configuration and feature metadata, can be used for `--config` parameter in subsequent runs.
+
+### run_XXX_metadata.json - Metadata File
+
+Contains complete run metadata for exact reproduction:
+- Code version (git commit)
+- Python version
+- All dependency versions
+- Data file hash
+- Random seed (base seed)
+- Hostname and timestamp
+
+---
+
+## 📂 Project Structure
 
 ```
 Ashare_DpointTrader-2.0/
-├── main_cli.py              # 主入口，命令行接口
-├── data_loader.py           # 数据加载与清洗
-├── feature_dpoint.py        # 特征工程
-├── model_builder.py         # 模型构建
-├── splitter.py              # Walk-forward 数据分割
-├── metrics.py               # 评估指标计算
-├── search_engine.py         # 随机搜索引擎
-├── trainer_optimizer.py     # 训练器 API
-├── backtester_engine.py     # 回测执行引擎
-├── reporter.py              # 结果报告生成
-├── persistence.py           # 配置持久化
-├── constants.py             # 全局常量
-├── config_schema.py         # 配置 Schema 定义和验证
-├── structured_logging.py    # 结构化日志配置
-├── setup_check.py           # 启动前检查脚本
-├── requirements.txt         # Python 依赖列表
-├── pyproject.toml           # 项目配置文件
-├── pytest.ini               # pytest 测试配置
-├── data/                    # 数据目录
+├── main_cli.py              # Main entry point, CLI interface
+├── data_loader.py           # Data loading and cleaning
+├── feature_dpoint.py        # Feature engineering
+├── model_builder.py         # Model construction
+├── splitter.py              # Walk-forward data splitting
+├── metrics.py               # Evaluation metrics calculation
+├── search_engine.py         # Random search engine
+├── trainer_optimizer.py     # Trainer API
+├── backtester_engine.py     # Backtest execution engine
+├── reporter.py              # Report generation
+├── persistence.py           # Configuration persistence
+├── constants.py             # Global constants
+├── config_schema.py         # Configuration schema and validation
+├── structured_logging.py    # Structured logging configuration
+├── setup_check.py           # Startup verification script
+├── requirements.txt         # Python dependencies
+├── pyproject.toml           # Project configuration file
+├── pytest.ini               # pytest test configuration
+├── data/                    # Data directory
 │   └── 600698_5Y_daily_qfq_20210302_20260302.xlsx
-├── output/                  # 输出目录（运行后生成）
+├── output/                  # Output directory (generated after running)
 │   ├── run_001.xlsx
 │   ├── run_001_config.json
 │   ├── run_001_metadata.json
 │   └── ...
-├── logs/                    # 日志目录（运行后生成）
+├── logs/                    # Log directory (generated after running)
 │   └── dpoint_trader_*.log
-└── tests/                   # 测试目录
+└── tests/                   # Test directory
     ├── test_backtester.py
     ├── test_features.py
     ├── test_splitter.py
@@ -618,150 +622,151 @@ Ashare_DpointTrader-2.0/
 
 ---
 
-## 🔬 核心算法
+## 🔬 Core Algorithms
 
-### Dpoint 预测模型
+### Dpoint Prediction Model
 
 ```
 Dpoint_t = P(close_{t+1} > close_t | X_t)
 ```
 
-- **输入**: 截至 t 日的 OHLCV、成交额、换手率等特征
-- **输出**: 次日上涨概率（0~1 之间）
-- **关键**: 所有特征仅使用 t 日及之前数据，无未来函数
+- **Input**: OHLCV, trading amount, turnover rate, and other features up to day t
+- **Output**: Probability of next-day increase (between 0~1)
+- **Key**: All features use only data up to day t, no look-ahead bias
 
-### Walk-forward 验证流程
+### Walk-forward Validation Flow
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Walk-forward 切分 (n_folds=4, train_start_ratio=0.5)   │
+│  Walk-forward Splits (n_folds=4, train_start_ratio=0.5) │
 │                                                         │
-│  Fold 1: 训练 [0%~50%]  →  验证 [50%~62.5%]             │
-│  Fold 2: 训练 [0%~62%]  →  验证 [62.5%~75%]             │
-│  Fold 3: 训练 [0%~75%]  →  验证 [75%~87.5%]             │
-│  Fold 4: 训练 [0%~87%]  →  验证 [87.5%~100%]            │
+│  Fold 1: Train [0%~50%]  →  Validate [50%~62.5%]        │
+│  Fold 2: Train [0%~62%]  →  Validate [62.5%~75%]        │
+│  Fold 3: Train [0%~75%]  →  Validate [75%~87.5%]        │
+│  Fold 4: Train [0%~87%]  →  Validate [87.5%~100%]       │
 │                                                         │
-│  特点：训练集累积扩展 (expanding window)                │
-│        验证集不重叠                                     │
+│  Features: Training set expands cumulatively            │
+│            (expanding window)                           │
+│            Validation sets do not overlap               │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 随机搜索算法
+### Random Search Algorithm
 
 ```python
-# 伪代码
+# Pseudocode
 for iteration in range(runs):
     if explore_mode:
-        config = sample_global_space()  # 全局探索
+        config = sample_global_space()  # Global exploration
     else:
-        config = perturb_best_config()  # 局部利用
+        config = perturb_best_config()  # Local exploitation
 
-    score = evaluate_walkforward(config)  # Walk-forward 评估
+    score = evaluate_walkforward(config)  # Walk-forward evaluation
 
     if score > best_score + epsilon:
         best_config = config
         best_score = score
 ```
 
-### 交易执行逻辑
+### Trading Execution Logic
 
-1. **信号生成**: `dpoint > buy_threshold` → 买入信号；`dpoint < sell_threshold` → 卖出信号
-2. **信号确认**: 连续 N 日满足阈值才触发（`confirm_days`）
-3. **执行模拟**: T 日信号，T+1 日执行（使用配置的执行价模型）
-   - `same_close_idealized`: 用 T 日收盘价（理想化，旧版行为）
-   - `next_open`: 用 T+1 日开盘价（推荐，更真实）
-   - `next_close`: 用 T+1 日收盘价（保守）
-4. **持仓管理**: 满足 `min_hold_days` 后才允许平仓
+1. **Signal Generation**: `dpoint > buy_threshold` → Buy signal; `dpoint < sell_threshold` → Sell signal
+2. **Signal Confirmation**: Trigger only after N consecutive days meeting threshold (`confirm_days`)
+3. **Execution Simulation**: Day t signal executes on Day t+1 (using configured execution price model)
+   - `same_close_idealized`: Uses Day t's close price (idealized, legacy behavior)
+   - `next_open`: Uses Day t+1's open price (recommended, more realistic)
+   - `next_close`: Uses Day t+1's close price (conservative)
+4. **Position Management**: Allow closing only after satisfying `min_hold_days`
 
 ---
 
-## 🧪 测试
+## 🧪 Testing
 
-### 运行所有测试
+### Run All Tests
 
 ```bash
 cd Ashare_DpointTrader-2.0
 pytest tests/ -v
 ```
 
-### 运行特定测试
+### Run Specific Tests
 
 ```bash
-# 回测引擎测试
+# Backtester engine tests
 pytest tests/test_backtester.py -v
 
-# 特征工程测试
+# Feature engineering tests
 pytest tests/test_features.py -v
 
-# 端到端配置测试
+# End-to-end configuration tests
 pytest tests/test_e2e_config.py -v
 
-# 集成测试（最慢）
+# Integration tests (slowest)
 pytest tests/test_integration.py -v
 ```
 
-### 生成覆盖率报告
+### Generate Coverage Report
 
 ```bash
-# 安装覆盖率工具
+# Install coverage tool
 pip install pytest-cov
 
-# 运行并生成覆盖率报告
+# Run and generate coverage report
 pytest --cov=. --cov-report=html
 ```
 
 ---
 
-## ⚙️ 工程化特性
+## ⚙️ Engineering Features
 
-- **配置 Schema**: 使用 Pydantic 定义严格的配置结构，支持验证和序列化
-- **配置持久化**: 最优配置自动保存至 JSON，支持复现
-- **结构化日志**: JSON 格式日志，支持性能追踪和问题诊断
-- **启动检查**: 运行前自动检查依赖、数据文件和输出目录
-- **版本追踪**: 记录代码版本、Python 版本、依赖版本、git commit
-- **数据哈希**: 使用 SHA-256 计算数据文件哈希，确保数据一致性
-- **测试覆盖**: 端到端测试保护核心功能，防止重构引入回归
+- **Configuration Schema**: Strict configuration structure using Pydantic, supports validation and serialization
+- **Configuration Persistence**: Best configuration auto-saved to JSON, supports reproduction
+- **Structured Logging**: JSON format logs with performance tracking and diagnostics
+- **Startup Checks**: Automatically checks dependencies, data files, and output directory before running
+- **Version Tracking**: Records code version, Python version, dependency versions, git commit
+- **Data Hash**: Uses SHA-256 to calculate data file hash, ensures data consistency
+- **Test Coverage**: End-to-end tests protect core functionality, prevent regression from refactoring
 
 ---
 
-## ❓ 常见问题
+## ❓ FAQ
 
-### Q: 为什么 WalkForwardSummary 最重要？
+### Q: Why is WalkForwardSummary most important?
 
-**A**: Walk-Forward 每折验证集都是未见过的数据，反映真实可期望表现。训练集和验证集严格分离，避免前向偏差。
+**A**: Each Walk-Forward fold uses unseen data, reflecting real expected performance. Training and validation sets are strictly separated, avoiding look-ahead bias.
 
-### Q: 为什么 EquityCurve 仅供参考？
+### Q: Why is EquityCurve for reference only?
 
-**A**: `EquityCurve` 展示的是**全样本拟合结果**（In-Sample Fit）：
-- 模型在全部数据上训练并预测，存在信息泄露
-- 未考虑隔夜跳空、滑点和成交偏差（除非使用真实执行模型）
-- 数值偏乐观，**不代表未来实盘表现**
+**A**: `EquityCurve` shows the **Full-Sample Fit result** (In-Sample):
+- Model is trained and predicted on the same data (information leakage)
+- Does not account for overnight gaps, slippage, and fill deviation (unless using realistic execution model)
+- Results are overly optimistic, **does not represent future live trading performance**
 
-**真实样本外表现请查看 [WalkForwardSummary] 和 [SearchLog] 中的指标。**
+**For real out-of-sample performance, see metrics in [WalkForwardSummary] and [SearchLog].**
 
-### Q: 如何复现上次运行？
+### Q: How to reproduce a previous run?
 
-**A**: 使用 `--config` 参数加载上次的 metadata 文件：
+**A**: Use `--config` parameter to load the previous metadata file:
 ```bash
 python main_cli.py --config output/run_001_metadata.json
 ```
 
-### Q: continue 模式和 first 模式有什么区别？
+### Q: What's the difference between continue mode and first mode?
 
 **A**: 
-- `first` 模式：从头开始随机搜索
-- `continue` 模式：读取 `output/` 目录下最新运行的最优配置，在此基础上继续优化
+- `first` mode: Starts random search from scratch
+- `continue` mode: Reads the best configuration from the latest run in `output/` directory and continues optimization
 
 ---
 
-## ⚠️ 免责声明
+## ⚠️ Disclaimer
 
-本软件仅供学术研究和教育用途，不构成投资建议。使用本软件进行的任何交易行为，风险由用户自行承担。作者不对任何直接或间接的损失负责。
+This software is for academic research and educational purposes only, and does not constitute investment advice. Any trading behavior conducted using this software is at the user's own risk. The author is not responsible for any direct or indirect losses.
 
-金融市场交易存在重大风险，包括但不限于：
-- 市场波动风险
-- 流动性风险
-- 技术故障风险
-- 模型失效风险
+Financial market trading involves significant risks, including but not limited to:
+- Market volatility risk
+- Liquidity risk
+- Technical failure risk
+- Model failure risk
 
-请在充分理解风险并评估自身承受能力后谨慎使用。
+Please use with caution after fully understanding the risks and evaluating your own risk tolerance.
